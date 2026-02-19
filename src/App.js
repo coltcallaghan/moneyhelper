@@ -1595,6 +1595,7 @@ function App() {
     setForm(prev => ({ ...prev, [name]: value }));
   };
 
+  const taxSummaryRef = useRef(null);
   const handleSubmit = (e) => {
     e.preventDefault();
     const salary        = parseFloat(form.salary)        || 0;
@@ -1625,6 +1626,11 @@ function App() {
     const targetIncome      = parseFloat(form.targetIncome)      || salary * 0.67;
     if (salary <= 0 || contribution <= 0) return;
     setResults(buildResults({ salary, taxCode: form.taxCode, age, yearsService, leaveAge, apCostPer100, apPaymentType: form.apPaymentType, existingDbPension, existingIsaPot, existingSippPot, statePensionAge, statePension, contribution, retirementAge, returnRate, inflationRate, targetIncome, salSacrifice, flatRateExpenses, manualTaxablePay, propertyValue, mortgageBalance, mortgageRate, mortgageTermYears, monthlyMortgage, cashReserve, monthlyExpenses }));
+    setTimeout(() => {
+      if (taxSummaryRef.current) {
+        taxSummaryRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 100);
   };
 
   // Live tax preview — use adjusted salary if payslip details provided
@@ -1688,10 +1694,14 @@ function App() {
   function handleSaveCalculation() {
     if (!results) return;
     const summary = getCalcSummary(form, results);
-    setSavedCalcs(prev => [
-      { form: { ...form }, results, summary, ts: Date.now() },
-      ...prev.slice(0, 9) // keep max 10
-    ]);
+    setSavedCalcs(prev => {
+      const nextIdx = prev.length + 1;
+      return [
+        { form: { ...form }, results, summary, ts: Date.now(), name: `Calculation ${nextIdx}` },
+        ...prev.slice(0, 9)
+      ];
+    });
+    setTempNames(prev => [`Calculation ${savedCalcs.length + 1}`, ...prev.slice(0, 9)]);
   }
 
   // Delete a saved calculation
@@ -1700,9 +1710,18 @@ function App() {
     if (compareIdx === idx) setCompareIdx(null);
   }
 
-  // Load a saved calculation into compare view
+  // Load a saved calculation into main view (show all results as if just calculated)
   function handleCompareSaved(idx) {
-    setCompareIdx(idx === compareIdx ? null : idx);
+    if (savedCalcs[idx]) {
+      setForm({ ...savedCalcs[idx].form });
+      setResults(savedCalcs[idx].results);
+      setCompareIdx(null); // Hide compare card
+      setTimeout(() => {
+        if (taxSummaryRef.current) {
+          taxSummaryRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 100);
+    }
   }
 
   // Render compare card if selected
@@ -1751,7 +1770,7 @@ function App() {
           <p className="form-section-label">Your Details</p>
           <div className="form-grid">
             <div className="form-group">
-              <label htmlFor="salary">Annual Salary</label>
+              <label htmlFor="salary">Annual Salary<span className="required-star">*</span></label>
               <div className="input-wrap">
                 <span className="input-prefix">£</span>
                 <input id="salary" name="salary" type="number" placeholder="35000" value={form.salary} onChange={handleChange} required />
@@ -1766,12 +1785,12 @@ function App() {
               )}
             </div>
             <div className="form-group">
-              <label htmlFor="age">Age</label>
+              <label htmlFor="age">Age<span className="required-star">*</span></label>
               <input id="age" className="bare-input" name="age" type="number" placeholder="35" min="18" max="65" value={form.age} onChange={handleChange} required />
             </div>
             <div className="form-group">
               <div className="label-row">
-                <label htmlFor="yearsService">Years of Reckonable Service <span className="label-hint">(for EDP eligibility only)</span></label>
+                <label htmlFor="yearsService">Years of Reckonable Service <span className="label-hint">(for EDP eligibility only)</span><span className="required-star">*</span></label>
                 <InfoHint>Only used to check EDP eligibility (age 40–59 + 20 yrs service). Has no effect on the Added Pension calculation itself.</InfoHint>
               </div>
               <input id="yearsService" className="bare-input" name="yearsService" type="number" placeholder="10" min="0" max="45" value={form.yearsService} onChange={handleChange} required />
@@ -2081,7 +2100,7 @@ function App() {
           <div className="form-grid">
             <div className="form-group">
               <div className="label-row">
-                <label htmlFor="contribution">Amount to Invest</label>
+                <label htmlFor="contribution">Amount to Invest<span className="required-star">*</span></label>
                 <InfoHint>
                   {form.contributionFreq === 'monthly'
                     ? `Gross monthly amount — ${fmtGBP(liveContrib, 0)}/yr annualised. Compared across all three options.`
@@ -2126,7 +2145,7 @@ function App() {
               )}
             </div>
             <div className="form-group">
-              <label htmlFor="retirementAge">Target Retirement Age</label>
+              <label htmlFor="retirementAge">Target Retirement Age<span className="required-star">*</span></label>
               <input id="retirementAge" className="bare-input" name="retirementAge" type="number" placeholder="60" min="40" max="75" value={form.retirementAge} onChange={handleChange} required />
             </div>
             <div className="form-group">
@@ -2148,16 +2167,16 @@ function App() {
             </div>
             <div className="form-group">
               <div className="label-row">
-                <label htmlFor="targetIncome">Target Annual Retirement Income</label>
+                <label htmlFor="targetIncome">Target Annual Retirement Income <span className="required-star">*</span></label>
                 <InfoHint>Used to calculate your FIRE number (25× rule)</InfoHint>
               </div>
               <div className="input-wrap">
                 <span className="input-prefix">£</span>
-                <input id="targetIncome" name="targetIncome" type="number" placeholder="25000" value={form.targetIncome} onChange={handleChange} />
+                <input id="targetIncome" name="targetIncome" type="number" placeholder="25000" value={form.targetIncome} onChange={handleChange} required />
               </div>
             </div>
             <div className="form-group">
-              <label htmlFor="returnRate">Expected Annual Return (nominal) <span className="label-hint">(before inflation)</span></label>
+              <label htmlFor="returnRate">Expected Annual Return (nominal) <span className="label-hint">(before inflation)</span><span className="required-star">*</span></label>
               <input id="returnRate" className="bare-input" name="returnRate" type="number" placeholder="0.07" min="0" max="0.20" step="0.01" value={form.returnRate} onChange={handleChange} required />
               <div className="preset-buttons">
                 {RETURN_PRESETS.map(p => (
@@ -2170,7 +2189,7 @@ function App() {
             </div>
             <div className="form-group">
               <div className="label-row">
-                <label htmlFor="inflationRate">Expected Inflation Rate</label>
+                <label htmlFor="inflationRate">Expected Inflation Rate<span className="required-star">*</span></label>
                 <InfoHint>Bank of England target is 2%. All projections shown in today's purchasing power after adjusting for inflation.</InfoHint>
               </div>
               <input id="inflationRate" className="bare-input" name="inflationRate" type="number" placeholder="0.025" min="0" max="0.10" step="0.005" value={form.inflationRate} onChange={handleChange} required />
@@ -2216,7 +2235,7 @@ function App() {
             </div>
           )}
 
-          <button className="btn-calculate" type="submit">Calculate My Best Option →</button>
+          <button className="btn-calculate" type="submit" disabled={!form.targetIncome}>Calculate My Best Option →</button>
         </form>
       </div>
 
@@ -2236,7 +2255,16 @@ function App() {
                 }
                 function handleRenameSave() {
                   setEditingIdx(null);
-                  setSavedCalcs(prev => prev.map((item, idx) => idx === i ? { ...item, name: tempName } : item));
+                  setSavedCalcs(prev => prev.map((item, idx) => {
+                    if (idx === i) {
+                      let newName = tempName.trim();
+                      if (newName === '') {
+                        newName = `Calculation ${idx + 1}`;
+                      }
+                      return { ...item, name: newName };
+                    }
+                    return item;
+                  }));
                 }
                 function handleRenameCancel() {
                   setEditingIdx(null);
@@ -2245,7 +2273,7 @@ function App() {
                 return (
                   <li key={c.ts} className={`saved-item-vertical${i === compareIdx ? ' selected' : ''}`}> 
                     <div className="saved-item-main">
-                      <button className="saved-item-summary" onClick={() => handleCompareSaved(i)}>{c.name || c.summary}</button>
+                      <button className="saved-item-summary" onClick={() => handleCompareSaved(i)}>{c.name && c.name.trim() !== '' ? c.name : c.summary}</button>
                       <button className="delete-btn" onClick={() => handleDeleteSaved(i)} title="Delete">🗑️</button>
                     </div>
                     <div className="saved-item-actions">
@@ -2280,7 +2308,7 @@ function App() {
         <div className="results-section">
 
           {/* Tax summary */}
-          <div className="tax-summary-card">
+          <div className="tax-summary-card" ref={taxSummaryRef}>
             <p className="form-section-label" style={{ marginBottom: '1rem' }}>Your Tax Summary (2025/26)</p>
             <div className="tax-summary-grid">
               {results.taxSummary.hasDeductions && (
@@ -2334,7 +2362,7 @@ function App() {
           </div>
 
           {/* FIRE number */}
-          {results.fireNumber > 0 && (
+          {results.fireNumber > 0 && form.targetIncome && parseFloat(form.targetIncome) > 0 && (
             <div className="fire-card">
               <div className="fire-header">
                 <span className="fire-emoji">🔥</span>
