@@ -1,7 +1,45 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts';
 import FaviconHelmet from './FaviconHelmet';
+
+// ── Info Hint popup ───────────────────────────────────────────────────────
+function InfoHint({ children }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  return (
+    <span className="info-hint-wrap" ref={wrapRef}>
+      <button
+        type="button"
+        className={`info-hint-btn${open ? ' open' : ''}`}
+        onClick={() => setOpen(o => !o)}
+        aria-label="More information"
+        aria-expanded={open}
+      >
+        i
+      </button>
+      {open && (
+        <div className="info-hint-popup" role="dialog">
+          <div className="info-hint-popup-header">
+            <span className="info-hint-popup-title">Info</span>
+            <button type="button" className="info-hint-close" onClick={() => setOpen(false)} aria-label="Close">✕</button>
+          </div>
+          <div className="info-hint-popup-body">{children}</div>
+        </div>
+      )}
+    </span>
+  );
+}
 
 // Utility: Generate a short summary for a calculation (for display in saved list)
 function getCalcSummary(form, results) {
@@ -1530,15 +1568,23 @@ function App() {
   useEffect(() => {
     document.title = 'Soldiers Fortune';
   }, []);
+
+  useEffect(() => {
+    const prevent = (e) => {
+      if (document.activeElement?.type === 'number') e.preventDefault();
+    };
+    document.addEventListener('wheel', prevent, { passive: false });
+    return () => document.removeEventListener('wheel', prevent);
+  }, []);
   const [form, setForm] = useState({
     salary: '', taxCode: '', age: '', yearsService: '',
-    leaveAge: '', apCostPer100: '', apPaymentType: 'periodic',
+    leaveAge: '', apCostPer100: '', apPaymentType: 'single',
     existingDbPension: '', existingIsaPot: '', existingSippPot: '',
     statePensionAge: '67', statePension: '11502',
     salSacrifice: '', flatRateExpenses: '', manualTaxablePay: '',
     propertyValue: '', mortgageBalance: '', mortgageRate: '', mortgageTermYears: '', monthlyMortgage: '',
     cashReserve: '', monthlyExpenses: '',
-    contribution: '', contributionFreq: 'monthly', retirementAge: '60', returnRate: '0.07', inflationRate: '0.025', targetIncome: '',
+    contribution: '', contributionFreq: 'annual', retirementAge: '60', returnRate: '0.07', inflationRate: '0.025', targetIncome: '',
   });
   const [showPayslipDetails, setShowPayslipDetails] = useState(false);
   const [showPropertyDetails, setShowPropertyDetails] = useState(false);
@@ -1629,6 +1675,9 @@ function App() {
     }
   });
   const [compareIdx, setCompareIdx] = useState(null); // index of saved calc to compare
+  // Editing state for rename feature
+  const [editingIdx, setEditingIdx] = useState(null);
+  const [tempNames, setTempNames] = useState(() => savedCalcs.map(c => c.name || c.summary));
 
   // Save calculations to localStorage whenever changed
   useEffect(() => {
@@ -1680,8 +1729,11 @@ function App() {
     <div className="app">
       {/* ── Header ── */}
       <header className="app-header">
-        <div className="header-badge">🪖 Soldiers Fortune</div>
-        <h1><span role="img" aria-label="helmet" style={{marginRight:'0.5rem'}}>🪖</span>Soldiers Fortune</h1>
+        {/* Removed header-badge bubble helmet/title */}
+        <h1 className="main-title-with-helmet">
+          <img src={process.env.PUBLIC_URL + '/military-hat.png'} alt="Military Helmet" style={{height: '2.8em', verticalAlign: 'middle', marginRight: '0.7em'}} />
+          Soldiers Fortune
+        </h1>
         <p>Your one-stop shop for UK Armed Forces personnel to understand, plan, and optimise your finances — including ISA, SIPP, AFPS 15 Added Pension, mortgage, cash reserves, and more. All calculations use real UK tax rules and inflation-adjusted projections.</p>
         <div className="disclaimer-box">
           <span className="disclaimer-icon">⚠️</span>
@@ -1689,34 +1741,40 @@ function App() {
         </div>
       </header>
 
+      {/* ── Body: 2-col on desktop ── */}
+      <div className={`app-body${results ? ' has-results' : ''}`}>
+      <div className="app-col-left">
+
       {/* ── Input Form ── */}
       <div className="form-card">
         <form onSubmit={handleSubmit}>
           <p className="form-section-label">Your Details</p>
           <div className="form-grid">
             <div className="form-group">
-              <label>Annual Salary</label>
+              <label htmlFor="salary">Annual Salary</label>
               <div className="input-wrap">
                 <span className="input-prefix">£</span>
-                <input name="salary" type="number" placeholder="35000" value={form.salary} onChange={handleChange} required />
+                <input id="salary" name="salary" type="number" placeholder="35000" value={form.salary} onChange={handleChange} required />
               </div>
             </div>
             <div className="form-group">
-              <label>Tax Code <span className="label-hint">(e.g. 1257L, BR, D0, K100)</span></label>
-              <input className="bare-input" name="taxCode" type="text" placeholder="1257L"
+              <label htmlFor="taxCode">Tax Code <span className="label-hint">(e.g. 1257L, BR, D0, K100)</span></label>
+              <input id="taxCode" className="bare-input" name="taxCode" type="text" placeholder="1257L"
                 value={form.taxCode} onChange={handleChange} />
               {form.taxCode && (
                 <span className="input-hint tax-code-note">{parseTaxCode(form.taxCode).note}</span>
               )}
             </div>
             <div className="form-group">
-              <label>Age</label>
-              <input className="bare-input" name="age" type="number" placeholder="35" min="18" max="65" value={form.age} onChange={handleChange} required />
+              <label htmlFor="age">Age</label>
+              <input id="age" className="bare-input" name="age" type="number" placeholder="35" min="18" max="65" value={form.age} onChange={handleChange} required />
             </div>
             <div className="form-group">
-              <label>Years of Reckonable Service <span className="label-hint">(for EDP eligibility only)</span></label>
-              <input className="bare-input" name="yearsService" type="number" placeholder="10" min="0" max="45" value={form.yearsService} onChange={handleChange} required />
-              <span className="input-hint">Only used to check EDP eligibility (age 40–59 + 20 yrs service). Has no effect on the Added Pension calculation itself.</span>
+              <div className="label-row">
+                <label htmlFor="yearsService">Years of Reckonable Service <span className="label-hint">(for EDP eligibility only)</span></label>
+                <InfoHint>Only used to check EDP eligibility (age 40–59 + 20 yrs service). Has no effect on the Added Pension calculation itself.</InfoHint>
+              </div>
+              <input id="yearsService" className="bare-input" name="yearsService" type="number" placeholder="10" min="0" max="45" value={form.yearsService} onChange={handleChange} required />
             </div>
 
             {/* Collapsible payslip details */}
@@ -1726,52 +1784,52 @@ function App() {
                 <span className="payslip-toggle-icon">{showPayslipDetails ? '▾' : '▸'}</span>
                 🎖️ I have my MOD payslip — fine-tune my tax calculation
               </button>
-              <span className="input-hint">
-                Optional: enter figures from your payslip to get more accurate tax/NI calculations. If you skip this, the app uses your gross salary which is fine for most estimates.
-              </span>
+              <InfoHint>Optional: enter figures from your payslip to get more accurate tax/NI calculations. If you skip this, the app uses your gross salary which is fine for most estimates.</InfoHint>
               {showPayslipDetails && (
                 <div className="payslip-details-panel">
                   <div className="payslip-annual-callout">
-                    <strong>⚠️ Use annual (full-year) figures</strong> — from your <strong>March/April payslip</strong> (year-to-date totals) or your <strong>P60</strong>. Don't use a single month's figures — they won't match the annual tax calculation.
+                    <strong>⚠️ Use annual (full-year) figures</strong> — from your <strong>March payslip</strong> (year-to-date totals) or your <strong>P60</strong>. Don't use a single month's figures — they won't match the annual tax calculation.
                   </div>
                   <p className="payslip-panel-intro">
                     Your MOD payslip shows both monthly and year-to-date (YTD) columns. Use the <strong>YTD totals</strong> from your final payslip of the tax year (March/April), or your P60. The gaps between Gross, NIable, and Taxable Pay are your pre-tax deductions.
                   </p>
                   <div className="deductions-grid">
                     <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-                      <label className="sub-label">Easiest: Actual Taxable Pay <span className="label-hint">(annual YTD from payslip or P60)</span></label>
+                      <div className="label-row">
+                        <label htmlFor="manualTaxablePay" className="sub-label">Easiest: Actual Taxable Pay <span className="label-hint">(annual YTD from payslip or P60)</span></label>
+                        <InfoHint>Just copy the YTD “Taxable Pay” figure from your end-of-year payslip or P60. This is the quickest way — it overrides the two optional fields below.</InfoHint>
+                      </div>
                       <div className="input-wrap">
                         <span className="input-prefix">£</span>
-                        <input name="manualTaxablePay" type="number" placeholder="0" min="0" value={form.manualTaxablePay} onChange={handleChange} />
+                        <input id="manualTaxablePay" name="manualTaxablePay" type="number" placeholder="0" min="0" value={form.manualTaxablePay} onChange={handleChange} />
                         <span className="input-suffix">/yr</span>
                       </div>
-                      <span className="input-hint">
-                        Just copy the YTD "Taxable Pay" figure from your end-of-year payslip or P60. This is the quickest way — it overrides the two optional fields below.
-                      </span>
                     </div>
                     <div className="deductions-divider">— or break it down manually —</div>
                     <div className="form-group">
-                      <label className="sub-label">Salary Sacrifice / Pension Deductions <span className="label-hint">(annual YTD)</span></label>
+                      <div className="label-row">
+                        <label htmlFor="salSacrifice" className="sub-label">Salary Sacrifice / Pension Deductions <span className="label-hint">(annual YTD)</span></label>
+                        <InfoHint>
+                          Annual total: YTD Gross Pay − YTD NIable Pay from your payslip. Includes: Added Pension contributions, SAYE, Cycle to Work, childcare vouchers.
+                          {liveSalary > 0 && !form.salSacrifice && <><br/><strong style={{color:'#f59e0b'}}>Tip:</strong> Your gross is {fmtGBP(liveSalary)}. Find your YTD "NIable Pay" — the difference is this field.</>}
+                        </InfoHint>
+                      </div>
                       <div className="input-wrap">
                         <span className="input-prefix">£</span>
-                        <input name="salSacrifice" type="number" placeholder="0" min="0" value={form.salSacrifice} onChange={handleChange} />
+                        <input id="salSacrifice" name="salSacrifice" type="number" placeholder="0" min="0" value={form.salSacrifice} onChange={handleChange} />
                         <span className="input-suffix">/yr</span>
                       </div>
-                      <span className="input-hint">
-                        Annual total: YTD Gross Pay − YTD NIable Pay from your payslip. Includes: Added Pension contributions, SAYE, Cycle to Work, childcare vouchers.
-                        {liveSalary > 0 && !form.salSacrifice && <><br/><strong style={{color:'#f59e0b'}}>Tip:</strong> Your gross is {fmtGBP(liveSalary)}. Find your YTD "NIable Pay" — the difference is this field.</>}
-                      </span>
                     </div>
                     <div className="form-group">
-                      <label className="sub-label">Flat-Rate Employment Expenses <span className="label-hint">(annual)</span></label>
+                      <div className="label-row">
+                        <label htmlFor="flatRateExpenses" className="sub-label">Flat-Rate Employment Expenses <span className="label-hint">(annual)</span></label>
+                        <InfoHint>Annual total of HMRC-approved deductions: uniform/laundry allowance (£91.63/yr standard for Armed Forces), professional subscriptions, tools. These reduce taxable pay but NOT NIable pay.</InfoHint>
+                      </div>
                       <div className="input-wrap">
                         <span className="input-prefix">£</span>
-                        <input name="flatRateExpenses" type="number" placeholder="0" min="0" value={form.flatRateExpenses} onChange={handleChange} />
+                        <input id="flatRateExpenses" name="flatRateExpenses" type="number" placeholder="0" min="0" value={form.flatRateExpenses} onChange={handleChange} />
                         <span className="input-suffix">/yr</span>
                       </div>
-                      <span className="input-hint">
-                        Annual total of HMRC-approved deductions: uniform/laundry allowance (£91.63/yr standard for Armed Forces), professional subscriptions, tools. These reduce taxable pay but NOT NIable pay.
-                      </span>
                     </div>
                   </div>
 
@@ -1817,12 +1875,21 @@ function App() {
             </div>
 
             <div className="form-group">
-              <label>Expected Age When Leaving MOD <span className="label-hint">(for AFPS 15)</span></label>
-              <input className="bare-input" name="leaveAge" type="number" placeholder={form.retirementAge || '60'} min="18" max="75" value={form.leaveAge} onChange={handleChange} />
-              <span className="input-hint">Leave blank to assume you serve until retirement. AFPS 15 contributions stop at this age.</span>
+              <div className="label-row">
+                <label htmlFor="leaveAge">Expected Age When Leaving MOD <span className="label-hint">(for AFPS 15)</span></label>
+                <InfoHint>Leave blank to assume you serve until retirement. AFPS 15 contributions stop at this age.</InfoHint>
+              </div>
+              <input id="leaveAge" className="bare-input" name="leaveAge" type="number" placeholder={form.retirementAge || '60'} min="18" max="75" value={form.leaveAge} onChange={handleChange} />
             </div>
             <div className="form-group">
-              <label>AFPS 15 Payment Method</label>
+              <div className="label-row">
+                <label>AFPS 15 Payment Method</label>
+                <InfoHint>
+                  {form.apPaymentType === 'periodic'
+                    ? 'Monthly salary sacrifice — most common. Costs ~37% more per £100 block than single premium due to time-value loading.'
+                    : 'One-off lump sum per year. Cheaper per £100 block but requires a larger upfront payment.'}
+                </InfoHint>
+              </div>
               <div className="preset-buttons">
                 <button type="button" className={`preset-btn ${form.apPaymentType === 'periodic' ? 'active' : ''}`}
                   onClick={() => setForm(prev => ({ ...prev, apPaymentType: 'periodic' }))}>
@@ -1833,22 +1900,19 @@ function App() {
                   💵 Single Premium (lump sum)
                 </button>
               </div>
-              <span className="input-hint">
-                {form.apPaymentType === 'periodic'
-                  ? 'Monthly salary sacrifice — most common. Costs ~37% more per £100 block than single premium due to time-value loading.'
-                  : 'One-off lump sum per year. Cheaper per £100 block but requires a larger upfront payment.'}
-              </span>
             </div>
             <div className="form-group">
-              <label>AFPS 15 Cost per £100/yr Added Pension <span className="label-hint">(from your factor table — optional)</span></label>
+              <div className="label-row">
+                <label htmlFor="apCostPer100">AFPS 15 Cost per £100/yr Added Pension <span className="label-hint">(from your factor table — optional)</span></label>
+                <InfoHint>
+                  The cost to buy £100/yr of added pension for life ({form.apPaymentType === 'periodic' ? 'monthly periodic rate' : 'single premium rate'}).
+                  Leave blank to use this age-based estimate. If you have a quote, enter the exact figure here — it overrides the estimate.
+                </InfoHint>
+              </div>
               <div className="input-wrap">
                 <span className="input-prefix">£</span>
-                <input name="apCostPer100" type="number" placeholder={form.apPaymentType === 'periodic' ? Math.round(liveEstCost100 * 1.37) : liveEstCost100} min="500" max="20000" step="1" value={form.apCostPer100} onChange={handleChange} />
+                <input id="apCostPer100" name="apCostPer100" type="number" placeholder={form.apPaymentType === 'periodic' ? Math.round(liveEstCost100 * 1.37) : liveEstCost100} min="500" max="20000" step="1" value={form.apCostPer100} onChange={handleChange} />
               </div>
-              <span className="input-hint">
-                The cost to buy £100/yr of added pension for life ({form.apPaymentType === 'periodic' ? 'monthly periodic rate' : 'single premium rate'}).
-                Leave blank to use this age-based estimate. If you have a quote, enter the exact figure here — it overrides the estimate.
-              </span>
               {liveAge > 0 && (
                 <div className="ap-factor-table">
                   <p className="ap-factor-title">Approximate factors by age ({form.apPaymentType === 'periodic' ? 'periodic ≈ single × 1.37' : 'single premium'})</p>
@@ -1872,28 +1936,34 @@ function App() {
           <p className="form-section-label">Current Pots &amp; Pension Statement <span className="label-hint">(optional — needed for full retirement picture)</span></p>
           <div className="form-grid">
             <div className="form-group">
-              <label>MOD DB Pension — Annual Statement Value <span className="label-hint">(£/yr at retirement)</span></label>
+              <div className="label-row">
+                <label htmlFor="existingDbPension">MOD DB Pension — Annual Statement Value <span className="label-hint">(£/yr at retirement)</span></label>
+                <InfoHint>The projected annual pension shown on your latest MOD pension statement (your AFPS 15 defined benefit). Enter 0 or leave blank if not yet received.</InfoHint>
+              </div>
               <div className="input-wrap">
                 <span className="input-prefix">£</span>
-                <input name="existingDbPension" type="number" placeholder="12000" min="0" value={form.existingDbPension} onChange={handleChange} />
+                <input id="existingDbPension" name="existingDbPension" type="number" placeholder="12000" min="0" value={form.existingDbPension} onChange={handleChange} />
               </div>
-              <span className="input-hint">The projected annual pension shown on your latest MOD pension statement (your AFPS 15 defined benefit). Enter 0 or leave blank if not yet received.</span>
             </div>
             <div className="form-group">
-              <label>Existing ISA Balance</label>
+              <div className="label-row">
+                <label htmlFor="existingIsaPot">Existing ISA Balance</label>
+                <InfoHint>Current value of your Stocks &amp; Shares or Cash ISA. Will compound at your chosen growth rate until retirement.</InfoHint>
+              </div>
               <div className="input-wrap">
                 <span className="input-prefix">£</span>
-                <input name="existingIsaPot" type="number" placeholder="5000" min="0" value={form.existingIsaPot} onChange={handleChange} />
+                <input id="existingIsaPot" name="existingIsaPot" type="number" placeholder="5000" min="0" value={form.existingIsaPot} onChange={handleChange} />
               </div>
-              <span className="input-hint">Current value of your Stocks &amp; Shares or Cash ISA. Will compound at your chosen growth rate until retirement.</span>
             </div>
             <div className="form-group">
-              <label>Existing SIPP / Pension Pot Balance</label>
+              <div className="label-row">
+                <label htmlFor="existingSippPot">Existing SIPP / Pension Pot Balance</label>
+                <InfoHint>Current value of any SIPP or workplace pension. Will compound at your chosen growth rate until retirement.</InfoHint>
+              </div>
               <div className="input-wrap">
                 <span className="input-prefix">£</span>
-                <input name="existingSippPot" type="number" placeholder="10000" min="0" value={form.existingSippPot} onChange={handleChange} />
+                <input id="existingSippPot" name="existingSippPot" type="number" placeholder="10000" min="0" value={form.existingSippPot} onChange={handleChange} />
               </div>
-              <span className="input-hint">Current value of any SIPP or workplace pension. Will compound at your chosen growth rate until retirement.</span>
             </div>
           </div>
 
@@ -1913,38 +1983,38 @@ function App() {
               <p className="form-section-label">Property &amp; Mortgage</p>
               <div className="form-grid">
                 <div className="form-group">
-                  <label>Property Value <span className="label-hint">(estimated current market value)</span></label>
+                  <label htmlFor="propertyValue">Property Value <span className="label-hint">(estimated current market value)</span></label>
                   <div className="input-wrap">
                     <span className="input-prefix">£</span>
-                    <input name="propertyValue" type="number" placeholder="300000" min="0" value={form.propertyValue} onChange={handleChange} />
+                    <input id="propertyValue" name="propertyValue" type="number" placeholder="300000" min="0" value={form.propertyValue} onChange={handleChange} />
                   </div>
                 </div>
                 <div className="form-group">
-                  <label>Mortgage Balance Remaining</label>
+                  <label htmlFor="mortgageBalance">Mortgage Balance Remaining</label>
                   <div className="input-wrap">
                     <span className="input-prefix">£</span>
-                    <input name="mortgageBalance" type="number" placeholder="200000" min="0" value={form.mortgageBalance} onChange={handleChange} />
+                    <input id="mortgageBalance" name="mortgageBalance" type="number" placeholder="200000" min="0" value={form.mortgageBalance} onChange={handleChange} />
                   </div>
                 </div>
                 <div className="form-group">
-                  <label>Mortgage Interest Rate</label>
+                  <label htmlFor="mortgageRate">Mortgage Interest Rate</label>
                   <div className="input-wrap">
-                    <input name="mortgageRate" type="number" step="0.01" placeholder="4.5" min="0" max="20" value={form.mortgageRate} onChange={handleChange} />
+                    <input id="mortgageRate" name="mortgageRate" type="number" step="0.01" placeholder="4.5" min="0" max="20" value={form.mortgageRate} onChange={handleChange} />
                     <span className="input-suffix">%</span>
                   </div>
                 </div>
                 <div className="form-group">
-                  <label>Remaining Term</label>
+                  <label htmlFor="mortgageTermYears">Remaining Term</label>
                   <div className="input-wrap">
-                    <input name="mortgageTermYears" type="number" placeholder="25" min="0" max="40" value={form.mortgageTermYears} onChange={handleChange} />
+                    <input id="mortgageTermYears" name="mortgageTermYears" type="number" placeholder="25" min="0" max="40" value={form.mortgageTermYears} onChange={handleChange} />
                     <span className="input-suffix">yrs</span>
                   </div>
                 </div>
                 <div className="form-group">
-                  <label>Monthly Mortgage Payment</label>
+                  <label htmlFor="monthlyMortgage">Monthly Mortgage Payment</label>
                   <div className="input-wrap">
                     <span className="input-prefix">£</span>
-                    <input name="monthlyMortgage" type="number" placeholder="1100" min="0" value={form.monthlyMortgage} onChange={handleChange} />
+                    <input id="monthlyMortgage" name="monthlyMortgage" type="number" placeholder="1100" min="0" value={form.monthlyMortgage} onChange={handleChange} />
                     <span className="input-suffix">/mo</span>
                   </div>
                 </div>
@@ -1966,21 +2036,25 @@ function App() {
               <p className="form-section-label" style={{ marginTop: '1rem' }}>Cash Reserves</p>
               <div className="form-grid">
                 <div className="form-group">
-                  <label>Current Cash / Emergency Fund</label>
+                  <div className="label-row">
+                    <label htmlFor="cashReserve">Current Cash / Emergency Fund</label>
+                    <InfoHint>Total easily accessible cash savings (current account + easy-access savings)</InfoHint>
+                  </div>
                   <div className="input-wrap">
                     <span className="input-prefix">£</span>
-                    <input name="cashReserve" type="number" placeholder="10000" min="0" value={form.cashReserve} onChange={handleChange} />
+                    <input id="cashReserve" name="cashReserve" type="number" placeholder="10000" min="0" value={form.cashReserve} onChange={handleChange} />
                   </div>
-                  <span className="input-hint">Total easily accessible cash savings (current account + easy-access savings)</span>
                 </div>
                 <div className="form-group">
-                  <label>Monthly Living Expenses <span className="label-hint">(exc. mortgage)</span></label>
+                  <div className="label-row">
+                    <label htmlFor="monthlyExpenses">Monthly Living Expenses <span className="label-hint">(exc. mortgage)</span></label>
+                    <InfoHint>Used to calculate your emergency fund target (6 months)</InfoHint>
+                  </div>
                   <div className="input-wrap">
                     <span className="input-prefix">£</span>
-                    <input name="monthlyExpenses" type="number" placeholder="2000" min="0" value={form.monthlyExpenses} onChange={handleChange} />
+                    <input id="monthlyExpenses" name="monthlyExpenses" type="number" placeholder="2000" min="0" value={form.monthlyExpenses} onChange={handleChange} />
                     <span className="input-suffix">/mo</span>
                   </div>
-                  <span className="input-hint">Used to calculate your emergency fund target (6 months)</span>
                 </div>
               </div>
 
@@ -2006,10 +2080,17 @@ function App() {
           <p className="form-section-label">Contribution &amp; Projection Settings</p>
           <div className="form-grid">
             <div className="form-group">
-              <label>Amount to Invest</label>
+              <div className="label-row">
+                <label htmlFor="contribution">Amount to Invest</label>
+                <InfoHint>
+                  {form.contributionFreq === 'monthly'
+                    ? `Gross monthly amount — ${fmtGBP(liveContrib, 0)}/yr annualised. Compared across all three options.`
+                    : 'Gross annual amount to compare across all three options'}
+                </InfoHint>
+              </div>
               <div className="input-wrap">
                 <span className="input-prefix">£</span>
-                <input name="contribution" type="number" placeholder={form.contributionFreq === 'monthly' ? '300' : '3600'} value={form.contribution} onChange={handleChange} required />
+                <input id="contribution" name="contribution" type="number" placeholder={form.contributionFreq === 'monthly' ? '300' : '3600'} value={form.contribution} onChange={handleChange} required />
                 <span className="input-suffix">/{form.contributionFreq === 'monthly' ? 'mo' : 'yr'}</span>
               </div>
               <div className="preset-buttons" style={{ marginTop: '0.4rem' }}>
@@ -2036,11 +2117,6 @@ function App() {
                   📆 Annual
                 </button>
               </div>
-              <span className="input-hint">
-                {form.contributionFreq === 'monthly'
-                  ? `Gross monthly amount — ${fmtGBP(liveContrib, 0)}/yr annualised. Compared across all three options.`
-                  : 'Gross annual amount to compare across all three options'}
-              </span>
               {liveContrib > 0 && (
                 <div className="live-limits">
                   {liveContrib > 20000 && <span className="limit-warn">⚠️ ISA: exceeds £20,000/yr allowance</span>}
@@ -2050,33 +2126,39 @@ function App() {
               )}
             </div>
             <div className="form-group">
-              <label>Target Retirement Age</label>
-              <input className="bare-input" name="retirementAge" type="number" placeholder="60" min="40" max="75" value={form.retirementAge} onChange={handleChange} required />
+              <label htmlFor="retirementAge">Target Retirement Age</label>
+              <input id="retirementAge" className="bare-input" name="retirementAge" type="number" placeholder="60" min="40" max="75" value={form.retirementAge} onChange={handleChange} required />
             </div>
             <div className="form-group">
-              <label>State Pension Age</label>
-              <input className="bare-input" name="statePensionAge" type="number" placeholder="67" min="60" max="75" value={form.statePensionAge} onChange={handleChange} />
-              <span className="input-hint">Currently 66, rising to 67 by 2028. DB pension and State Pension will only appear in the chart from this age.</span>
+              <div className="label-row">
+                <label htmlFor="statePensionAge">State Pension Age</label>
+                <InfoHint>Currently 66, rising to 67 by 2028. DB pension and State Pension will only appear in the chart from this age.</InfoHint>
+              </div>
+              <input id="statePensionAge" className="bare-input" name="statePensionAge" type="number" placeholder="67" min="60" max="75" value={form.statePensionAge} onChange={handleChange} />
             </div>
             <div className="form-group">
-              <label>State Pension (annual) <span className="label-hint">(optional)</span></label>
+              <div className="label-row">
+                <label htmlFor="statePension">State Pension (annual) <span className="label-hint">(optional)</span></label>
+                <InfoHint>Full new State Pension is £11,502/yr (2025/26). Check your forecast at gov.uk/check-state-pension.</InfoHint>
+              </div>
               <div className="input-wrap">
                 <span className="input-prefix">£</span>
-                <input name="statePension" type="number" placeholder="11502" min="0" value={form.statePension} onChange={handleChange} />
+                <input id="statePension" name="statePension" type="number" placeholder="11502" min="0" value={form.statePension} onChange={handleChange} />
               </div>
-              <span className="input-hint">Full new State Pension is £11,502/yr (2025/26). Check your forecast at gov.uk/check-state-pension.</span>
             </div>
             <div className="form-group">
-              <label>Target Annual Retirement Income</label>
+              <div className="label-row">
+                <label htmlFor="targetIncome">Target Annual Retirement Income</label>
+                <InfoHint>Used to calculate your FIRE number (25× rule)</InfoHint>
+              </div>
               <div className="input-wrap">
                 <span className="input-prefix">£</span>
-                <input name="targetIncome" type="number" placeholder="25000" value={form.targetIncome} onChange={handleChange} />
+                <input id="targetIncome" name="targetIncome" type="number" placeholder="25000" value={form.targetIncome} onChange={handleChange} />
               </div>
-              <span className="input-hint">Used to calculate your FIRE number (25× rule)</span>
             </div>
             <div className="form-group">
-              <label>Expected Annual Return (nominal) <span className="label-hint">(before inflation)</span></label>
-              <input className="bare-input" name="returnRate" type="number" placeholder="0.07" min="0" max="0.20" step="0.01" value={form.returnRate} onChange={handleChange} required />
+              <label htmlFor="returnRate">Expected Annual Return (nominal) <span className="label-hint">(before inflation)</span></label>
+              <input id="returnRate" className="bare-input" name="returnRate" type="number" placeholder="0.07" min="0" max="0.20" step="0.01" value={form.returnRate} onChange={handleChange} required />
               <div className="preset-buttons">
                 {RETURN_PRESETS.map(p => (
                   <button key={p.value} type="button" className={`preset-btn ${parseFloat(form.returnRate) === p.value ? 'active' : ''}`}
@@ -2087,8 +2169,11 @@ function App() {
               </div>
             </div>
             <div className="form-group">
-              <label>Expected Inflation Rate</label>
-              <input className="bare-input" name="inflationRate" type="number" placeholder="0.025" min="0" max="0.10" step="0.005" value={form.inflationRate} onChange={handleChange} required />
+              <div className="label-row">
+                <label htmlFor="inflationRate">Expected Inflation Rate</label>
+                <InfoHint>Bank of England target is 2%. All projections shown in today's purchasing power after adjusting for inflation.</InfoHint>
+              </div>
+              <input id="inflationRate" className="bare-input" name="inflationRate" type="number" placeholder="0.025" min="0" max="0.10" step="0.005" value={form.inflationRate} onChange={handleChange} required />
               <div className="preset-buttons">
                 {INFLATION_PRESETS.map(p => (
                   <button key={p.value} type="button" className={`preset-btn ${parseFloat(form.inflationRate) === p.value ? 'active' : ''}`}
@@ -2097,7 +2182,6 @@ function App() {
                   </button>
                 ))}
               </div>
-              <span className="input-hint">Bank of England target is 2%. All projections shown in today's purchasing power after adjusting for inflation.</span>
             </div>
           </div>
 
@@ -2140,19 +2224,57 @@ function App() {
       <div className="save-compare-bar">
         <button className="btn-save-calc" onClick={handleSaveCalculation} disabled={!results}>💾 Save Calculation</button>
         {savedCalcs.length > 0 && (
-          <div className="saved-list">
-            <span>Saved:</span>
-            {savedCalcs.map((c, i) => (
-              <span key={c.ts} className={`saved-item${i === compareIdx ? ' selected' : ''}`}>
-                <button onClick={() => handleCompareSaved(i)}>{c.summary}</button>
-                <button className="delete-btn" onClick={() => handleDeleteSaved(i)} title="Delete">🗑️</button>
-              </span>
-            ))}
+          <div className="saved-list-vertical">
+            <span className="saved-list-title">Saved Calculations</span>
+            <ul className="saved-list-ul">
+              {savedCalcs.map((c, i) => {
+                const editing = editingIdx === i;
+                const tempName = tempNames[i] || c.name || c.summary;
+                function handleRenameStart() {
+                  setEditingIdx(i);
+                  setTempNames(prev => prev.map((n, idx) => idx === i ? c.name || c.summary : n));
+                }
+                function handleRenameSave() {
+                  setEditingIdx(null);
+                  setSavedCalcs(prev => prev.map((item, idx) => idx === i ? { ...item, name: tempName } : item));
+                }
+                function handleRenameCancel() {
+                  setEditingIdx(null);
+                  setTempNames(prev => prev.map((n, idx) => idx === i ? c.name || c.summary : n));
+                }
+                return (
+                  <li key={c.ts} className={`saved-item-vertical${i === compareIdx ? ' selected' : ''}`}> 
+                    <div className="saved-item-main">
+                      <button className="saved-item-summary" onClick={() => handleCompareSaved(i)}>{c.name || c.summary}</button>
+                      <button className="delete-btn" onClick={() => handleDeleteSaved(i)} title="Delete">🗑️</button>
+                    </div>
+                    <div className="saved-item-actions">
+                      {!editing ? (
+                        <button className="rename-btn" title="Rename calculation" onClick={handleRenameStart}>✏️ Rename</button>
+                      ) : (
+                        <>
+                          <input
+                            className="rename-input"
+                            value={tempName}
+                            onChange={e => setTempNames(prev => prev.map((n, idx) => idx === i ? e.target.value : n))}
+                            autoFocus
+                          />
+                          <button className="rename-btn" style={{color:'#10b981'}} onClick={handleRenameSave} title="Save name">💾 Save</button>
+                          <button className="rename-btn" style={{color:'#f87171'}} onClick={handleRenameCancel} title="Cancel rename">✖️ Cancel</button>
+                        </>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
           </div>
         )}
       </div>
       {renderCompareCard()}
+      </div>{/* end app-col-left */}
 
+      <div className="app-col-right">
       {/* ── Results ── */}
       {results && (
         <div className="results-section">
@@ -2424,6 +2546,8 @@ function App() {
           </p>
         </div>
       )}
+      </div>{/* end app-col-right */}
+      </div>{/* end app-body */}
     </div>
   );
 }
