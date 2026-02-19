@@ -1417,6 +1417,8 @@ function App() {
   const [showPayslipDetails, setShowPayslipDetails] = useState(false);
   const [showPropertyDetails, setShowPropertyDetails] = useState(false);
   const [results, setResults] = useState(null);
+  const [errors, setErrors] = useState({});
+  const formRef = useRef(null);
 
   // Clear previous results when serving toggle changes (forces recalculation)
   useEffect(() => {
@@ -1429,11 +1431,40 @@ function App() {
       ...prev,
       [name]: type === 'checkbox' ? checked : value
     }));
+    if (errors[name]) {
+      setErrors(prev => {
+        const next = { ...prev };
+        delete next[name];
+        return next;
+      });
+      try { const el = document.getElementsByName(name)[0]; if (el) { el.classList.remove('input-invalid'); } } catch {}
+    }
   };
 
   const taxSummaryRef = useRef(null);
   const handleSubmit = (e) => {
     e.preventDefault();
+    const elForm = formRef.current || e.target;
+    const requiredEls = elForm.querySelectorAll('[required]');
+    const nextErrors = {};
+    requiredEls.forEach(el => {
+      const name = el.name;
+      const val = el.value;
+      if (!val || (el.type === 'number' && parseFloat(val) <= 0)) {
+        nextErrors[name] = true;
+        try { el.classList.add('input-invalid'); } catch {}
+      } else {
+        try { el.classList.remove('input-invalid'); } catch {}
+      }
+    });
+    if (Object.keys(nextErrors).length > 0) {
+      setErrors(nextErrors);
+      const firstName = Object.keys(nextErrors)[0];
+      const firstEl = elForm.querySelector(`[name="${firstName}"]`);
+      if (firstEl) { try { firstEl.focus(); firstEl.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch {} }
+      return;
+    }
+
     const salary        = parseFloat(form.salary)        || 0;
     const age           = parseInt(form.age)              || 30;
     const yearsService  = parseInt(form.yearsService)     || 0;
@@ -1460,7 +1491,7 @@ function App() {
     const returnRate        = parseFloat(form.returnRate)        || 0.07;
     const inflationRate     = parseFloat(form.inflationRate)     || 0.025;
     const targetIncome      = parseFloat(form.targetIncome)      || salary * 0.67;
-    if (salary <= 0 || contribution <= 0) return;
+
     setResults(buildResults({
       salary, taxCode: form.taxCode, age,
       yearsService: form.isServing ? yearsService : 0,
@@ -1613,7 +1644,7 @@ function App() {
 
       {/* ── Input Form ── */}
       <div className="form-card">
-        <form onSubmit={handleSubmit}>
+        <form ref={formRef} onSubmit={handleSubmit} noValidate>
           <div className="form-group" style={{ gridColumn: '1 / -1', marginBottom: '1em' }}>
             <label htmlFor="isServing" style={{ fontWeight: 600 }}>
               <input
@@ -2105,7 +2136,7 @@ function App() {
             </div>
           )}
 
-          <button className="btn-calculate" type="submit" disabled={!form.targetIncome}>Calculate My Best Option →</button>
+          <button className="btn-calculate" type="submit">Calculate My Best Option →</button>
         </form>
       </div>
 

@@ -395,6 +395,12 @@ html, body {
    width: 100%;
    box-sizing: border-box;
  }
+
+/* Invalid input styling (set when validation fails) */
+.input-invalid {
+  border-color: #f87171 !important;
+  box-shadow: 0 0 0 3px rgba(248,113,113,0.08) !important;
+}
 @media (max-width: 600px) {
   .save-compare-bar {
     flex-direction: column;
