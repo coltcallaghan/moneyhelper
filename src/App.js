@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts';
-import FaviconHelmet from './FaviconHelmet';
 
 // ── Info Hint popup ───────────────────────────────────────────────────────
 function InfoHint({ children }) {
@@ -892,7 +891,6 @@ function RetirementTimelineChart({ results, form }) {
   const nominalRate     = parseFloat(form.returnRate)   || 0.07;
   const inflationRate   = parseFloat(form.inflationRate) || 0.025;
   const returnRate      = (1 + nominalRate) / (1 + inflationRate) - 1;
-  const contribution    = parseFloat(form.contribution) || 0;
   const existingIsa     = parseFloat(form.existingIsaPot)  || 0;
   const existingSipp    = parseFloat(form.existingSippPot) || 0;
   const targetIncome    = results.fireNumber > 0 ? results.fireNumber / 25 : 0;
@@ -1128,7 +1126,6 @@ function TotalWealthChart({ results, form }) {
   const nominalRate  = parseFloat(form.returnRate)  || 0.07;
   const inflationRate = parseFloat(form.inflationRate) || 0.025;
   const returnRate   = (1 + nominalRate) / (1 + inflationRate) - 1;
-  const contribution = parseFloat(form.contribution) || 0;
   const existingIsa  = parseFloat(form.existingIsaPot)  || 0;
   const existingSipp = parseFloat(form.existingSippPot) || 0;
   const targetRetAge = parseInt(form.retirementAge) || 60;
