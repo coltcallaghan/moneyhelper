@@ -1,15 +1,15 @@
 {
   "files": {
-    "main.css": "/moneyhelper/static/css/main.e1d6f40c.css",
-    "main.js": "/moneyhelper/static/js/main.93c21b2d.js",
-    "static/js/453.9ae78fdb.chunk.js": "/moneyhelper/static/js/453.9ae78fdb.chunk.js",
-    "index.html": "/moneyhelper/index.html",
-    "main.e1d6f40c.css.map": "/moneyhelper/static/css/main.e1d6f40c.css.map",
-    "main.93c21b2d.js.map": "/moneyhelper/static/js/main.93c21b2d.js.map",
-    "453.9ae78fdb.chunk.js.map": "/moneyhelper/static/js/453.9ae78fdb.chunk.js.map"
+    "main.css": "/static/css/main.e1d6f40c.css",
+    "main.js": "/static/js/main.39369018.js",
+    "static/js/453.9ae78fdb.chunk.js": "/static/js/453.9ae78fdb.chunk.js",
+    "index.html": "/index.html",
+    "main.e1d6f40c.css.map": "/static/css/main.e1d6f40c.css.map",
+    "main.39369018.js.map": "/static/js/main.39369018.js.map",
+    "453.9ae78fdb.chunk.js.map": "/static/js/453.9ae78fdb.chunk.js.map"
   },
   "entrypoints": [
     "static/css/main.e1d6f40c.css",
-    "static/js/main.93c21b2d.js"
+    "static/js/main.39369018.js"
   ]
 }
