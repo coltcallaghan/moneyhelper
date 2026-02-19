@@ -214,6 +214,13 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
   const taxInfo  = parseTaxCode(taxCode);
   const years    = Math.max(0, retirementAge - age);
 
+  // Build per-phase allocation breakdown for the chart
+  // Each phase has: { startAge, endAge, ap, sippNet, sippGross, isa }
+  const phaseAllocations = [];
+
+  // Build per-phase allocation breakdown for the chart
+  // Each phase has: { startAge, endAge, ap, sippNet, sippGross, isa }
+
   // If user provided payslip deductions, use adjusted salary for tax calc
   const hasDeductions = salSacrifice > 0 || flatRateExpenses > 0 || manualTaxablePay > 0;
   const adjustedSalary = manualTaxablePay > 0
@@ -235,10 +242,25 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
   const fireNumber    = targetIncome * 25; // 4% safe withdrawal rate
 
   // ── ISA ────────────────────────────────────────────────────────────────────
-  const isaLimit         = 20000;
-  const existingIsaGrowth = existingIsaPot > 0 ? existingIsaPot * Math.pow(1 + realReturnRate, years) : 0;
-  const isaPot            = projectPot(contribution, years, realReturnRate) + existingIsaGrowth;
-  const isaIncome         = isaPot * 0.04;
+  const isaLimit = 20000;
+  // Calculate ISA pot using only actual ISA allocations from phaseAllocations
+  let isaPot = existingIsaPot || 0;
+  if (phaseAllocations && phaseAllocations.length > 0) {
+    let pot = isaPot;
+    for (const phase of phaseAllocations) {
+      const phaseYears = phase.endAge - phase.startAge;
+      if (phase.isa && phase.isa > 0 && phaseYears > 0) {
+        pot = projectPot(phase.isa, phaseYears, realReturnRate, pot);
+      } else if (phaseYears > 0) {
+        pot = pot * Math.pow(1 + realReturnRate, phaseYears);
+      }
+    }
+    isaPot = pot;
+  } else {
+    // fallback: no phases, use old logic
+    isaPot = existingIsaPot > 0 ? existingIsaPot * Math.pow(1 + realReturnRate, years) : 0;
+  }
+  const isaIncome = isaPot * 0.04;
   const isa = {
     id: 'isa', name: 'Stocks & Shares ISA', icon: '💰', color: '#3b82f6',
     costToYou: contribution, taxSaving: 0, niSaving: 0,
@@ -256,7 +278,7 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
     highlights: [
       `Invest ${fmtGBP(contribution)}/yr from take-home pay`,
       existingIsaPot > 0
-        ? `Existing ${fmtGBP(existingIsaPot)} pot + ${fmtGBP(contribution)}/yr new → ${fmtGBP(isaPot)} at age ${retirementAge} (today's money)`
+        ? `Existing ${fmtGBP(existingIsaPot)} pot + ISA allocations → ${fmtGBP(isaPot)} at age ${retirementAge} (today's money)`
         : `Grows tax-free to ${fmtGBP(isaPot)} at age ${retirementAge} (${fmtPct(realReturnRate, 1)}/yr real growth)`,
 
       `4% drawdown → ~${fmtGBP(isaIncome, 0)}/yr fully tax-free income`,
@@ -597,7 +619,6 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
 
   // Build per-phase allocation breakdown for the chart
   // Each phase has: { startAge, endAge, ap, sippNet, sippGross, isa }
-  const phaseAllocations = [];
   let phaseStart = age;
   for (const phase of phases) {
     const apStep   = phase.steps.find(s => s.vehicle.includes('Added Pension'));
