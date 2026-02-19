@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts';
+import { buildMODActionPlan } from './actionPlanMOD';
+import { buildCivilianActionPlan } from './actionPlanCivilian';
 
 // ── Info Hint popup ───────────────────────────────────────────────────────
 function InfoHint({ children }) {
@@ -210,16 +212,13 @@ function calcMixScenarios(contribution, years, returnRate, taxRate) {
 // ─────────────────────────────────────────────────────────────────────────────
 // CORE CALCULATION ENGINE
 // ─────────────────────────────────────────────────────────────────────────────
-function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer100, apPaymentType, existingDbPension, existingIsaPot, existingSippPot, statePensionAge, statePension, contribution, retirementAge, returnRate, inflationRate, targetIncome, salSacrifice = 0, flatRateExpenses = 0, manualTaxablePay = 0, propertyValue = 0, mortgageBalance = 0, mortgageRate = 0, mortgageTermYears = 0, monthlyMortgage = 0, cashReserve = 0, monthlyExpenses = 0 }) {
+function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer100, apPaymentType, existingDbPension, existingIsaPot, existingSippPot, statePensionAge, statePension, contribution, retirementAge, returnRate, inflationRate, targetIncome, salSacrifice = 0, flatRateExpenses = 0, manualTaxablePay = 0, propertyValue = 0, mortgageBalance = 0, mortgageRate = 0, mortgageTermYears = 0, monthlyMortgage = 0, cashReserve = 0, monthlyExpenses = 0, isServing = false }) {
   const taxInfo  = parseTaxCode(taxCode);
   const years    = Math.max(0, retirementAge - age);
 
   // Build per-phase allocation breakdown for the chart
   // Each phase has: { startAge, endAge, ap, sippNet, sippGross, isa }
-  const phaseAllocations = [];
-
-  // Build per-phase allocation breakdown for the chart
-  // Each phase has: { startAge, endAge, ap, sippNet, sippGross, isa }
+  let phaseAllocations = [];
 
   // If user provided payslip deductions, use adjusted salary for tax calc
   const hasDeductions = salSacrifice > 0 || flatRateExpenses > 0 || manualTaxablePay > 0;
@@ -232,76 +231,134 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
 
   const taxRate  = getMarginalTaxRate(taxBasis, taxInfo);
   const niRate   = getMarginalNI(niBasis);
+  // SIPP limits (used by action plan builders)
+  const sippGrossLimit = Math.min(60000, salary || 0);
+  const sippNetLimit = Math.floor(sippGrossLimit / 1.25);
   // Real return rate: strip out inflation so all projections are in today's purchasing power
   const realReturnRate = (1 + returnRate) / (1 + inflationRate) - 1;
   const incomeTax     = calcIncomeTax(taxBasis, taxInfo);
   const ni            = calcNI(niBasis);
-  const takeHome      = salary - incomeTax - ni - salSacrifice;
-  const effTaxRate    = salary > 0 ? (incomeTax + ni) / salary : 0;
-  const effectivePA   = getEffectivePA(taxBasis, taxInfo.pa);
-  const fireNumber    = targetIncome * 25; // 4% safe withdrawal rate
+  // ── AFPS 15 Added Pension (compute parameters used by action plan) ───────
+  const apTaxSaving = contribution * taxRate;
+  const apNISaving = contribution * niRate;
+  const apNetCost = contribution - apTaxSaving - apNISaving;
 
-  // ── ISA ────────────────────────────────────────────────────────────────────
+  const effectiveLeaveAge = Math.min(Math.max(leaveAge || retirementAge, age), retirementAge);
+  const leaveYears = Math.max(0, effectiveLeaveAge - age);
+  const alreadyLeft = (typeof leaveAge !== 'undefined' && leaveAge <= age) || false;
+
+  const AP_LIFETIME_MAX = 8571.21;
+  const AP_MAX_MULTIPLES = AP_LIFETIME_MAX / 100;
+  const PERIODIC_LOADING = 1.37;
+  const estimatedCostPer100sp = Math.round(800 * Math.pow(1.042, (age || 30) - 20));
+  const estimatedCostPer100ap = apPaymentType === 'periodic' ? Math.round(estimatedCostPer100sp * PERIODIC_LOADING) : estimatedCostPer100sp;
+  const costPer100actual = apCostPer100 > 0 ? apCostPer100 : estimatedCostPer100ap;
+  const blocksPerYear = costPer100actual > 0 ? (contribution / costPer100actual) : 0;
+  const pensionPerYear = blocksPerYear * 100;
+
+  const totalPensionRaw = pensionPerYear * leaveYears;
+  const totalPensionAcquired = Math.min(totalPensionRaw, AP_LIFETIME_MAX);
+  const willHitCap = totalPensionRaw > AP_LIFETIME_MAX;
+  const yearsToHitCap = pensionPerYear > 0 ? Math.ceil(AP_LIFETIME_MAX / pensionPerYear) : leaveYears;
+  const blocksTotal = blocksPerYear * leaveYears;
+  const blocksRemaining = Math.max(0, AP_MAX_MULTIPLES - blocksTotal);
+  const apMaxAnnualByLifetime = leaveYears > 0
+    ? Math.round((AP_LIFETIME_MAX / 100) * costPer100actual / leaveYears)
+    : Math.round(AP_MAX_MULTIPLES * costPer100actual);
+  const apMaxContrib = Math.min(apMaxAnnualByLifetime, 60000);
+  const apLimitExceeded = !alreadyLeft && (willHitCap || contribution > 60000);
+
+  const edpEligible = age >= 40 && (yearsService || 0) >= 20 && age < 60;
+  const edpLumpSum = edpEligible ? totalPensionAcquired * 2.25 : 0;
+  const edpIncome = edpEligible ? totalPensionAcquired * 0.34 : 0;
+  const apPot = totalPensionAcquired * 25 + edpLumpSum;
+
+  let addedPension;
+  if (isServing) {
+    addedPension = {
+      id: 'addedpension', name: 'AFPS 15 Added Pension', icon: '🎖️', color: '#10b981',
+      costToYou: alreadyLeft ? 0 : apNetCost,
+      taxSaving: alreadyLeft ? 0 : apTaxSaving,
+      niSaving: alreadyLeft ? 0 : apNISaving,
+      potAtRetirement: apPot,
+      annualIncomeAtRetirement: totalPensionAcquired,
+      edpEligible, edpLumpSum, edpIncome, totalPensionAcquired, pensionPerYear, leaveYears,
+      limitExceeded: apLimitExceeded,
+      limitNote: alreadyLeft ? 'Already left — no further contributions' : (willHitCap ? `Career cap reached after ${yearsToHitCap} yrs` : null),
+    };
+  } else {
+    addedPension = {
+      id: 'addedpension', name: 'AFPS 15 Added Pension', icon: '🎖️', color: '#10b981',
+      costToYou: 0, taxSaving: 0, niSaving: 0, potAtRetirement: 0, annualIncomeAtRetirement: 0,
+      edpEligible: false, edpLumpSum: 0, edpIncome: 0, totalPensionAcquired: 0, pensionPerYear: 0, leaveYears: 0,
+      limitExceeded: false, limitNote: 'Not available unless currently serving',
+    };
+  }
+  // ── Action Plan: Use separate logic for MOD and civilian users ──
+  let actionPlan;
+  if (isServing && typeof leaveAge !== 'undefined' && typeof yearsService !== 'undefined' && leaveAge > age) {
+    // MOD user (serving)
+    actionPlan = buildMODActionPlan({
+      contribution, years, realReturnRate, taxRate, niRate, age, leaveAge, retirementAge,
+      apPaymentType, apCostPer100, sippNetLimit, fmtGBP, fmtPct, projectPot,
+      addedPension, apMaxContrib, costPer100actual, AP_LIFETIME_MAX, alreadyLeft, yearsService
+    });
+  } else {
+    // Civilian or veteran
+    actionPlan = buildCivilianActionPlan({
+      contribution, years, realReturnRate, taxRate, niRate, age, retirementAge,
+      sippNetLimit, fmtGBP, fmtPct, projectPot, alreadyLeft
+    });
+  }
+  phaseAllocations = actionPlan && actionPlan.phases ? actionPlan.phases.flatMap(p => p.steps.map((step, i) => ({
+    startAge: age + (i === 0 ? 0 : p.years),
+    endAge: age + p.years,
+    ap: step.vehicle === 'AFPS 15 Added Pension' ? step.gross : 0,
+    sippNet: step.vehicle === 'SIPP (Private Pension)' ? step.gross : 0,
+    sippGross: step.vehicle === 'SIPP (Private Pension)' ? step.gross * 1.25 : 0,
+    isa: step.vehicle === 'Stocks & Shares ISA' ? step.gross : 0,
+  }))) : [];
+
+  // ── ISA calculation using actual phase allocations ───────────────────────
   const isaLimit = 20000;
-  // Calculate ISA pot using only actual ISA allocations from phaseAllocations
-  let isaPot = existingIsaPot || 0;
+  // Compute both a phase-based ISA pot (used by timeline) and an "all-in" ISA pot
+  let isaPotPhase = parseFloat(existingIsaPot) || 0;
   if (phaseAllocations && phaseAllocations.length > 0) {
-    let pot = isaPot;
-    for (const phase of phaseAllocations) {
-      const phaseYears = phase.endAge - phase.startAge;
-      if (phase.isa && phase.isa > 0 && phaseYears > 0) {
-        pot = projectPot(phase.isa, phaseYears, realReturnRate, pot);
+    let pot = isaPotPhase;
+    for (const ph of phaseAllocations) {
+      const phaseYears = Math.max(0, (ph.endAge || retirementAge) - (ph.startAge || age));
+      if (ph.isa && ph.isa > 0 && phaseYears > 0) {
+        pot = pot * Math.pow(1 + realReturnRate, phaseYears) + projectPot(ph.isa, phaseYears, realReturnRate);
       } else if (phaseYears > 0) {
         pot = pot * Math.pow(1 + realReturnRate, phaseYears);
       }
     }
-    isaPot = pot;
+    isaPotPhase = pot;
   } else {
-    // fallback: no phases, use old logic
-    isaPot = existingIsaPot > 0 ? existingIsaPot * Math.pow(1 + realReturnRate, years) : 0;
+    isaPotPhase = existingIsaPot > 0 ? (existingIsaPot * Math.pow(1 + realReturnRate, years)) : 0;
   }
-  const isaIncome = isaPot * 0.04;
+  // For the comparison card, show the pot you'd get if you invested the full contribution into an ISA
+  const existingIsaGrowth = (existingIsaPot > 0 ? existingIsaPot * Math.pow(1 + realReturnRate, years) : 0);
+  const isaPotAllIn = projectPot(contribution, years, realReturnRate) + existingIsaGrowth;
+  const isaIncome = isaPotAllIn * 0.04;
   const isa = {
     id: 'isa', name: 'Stocks & Shares ISA', icon: '💰', color: '#3b82f6',
     costToYou: contribution, taxSaving: 0, niSaving: 0,
-    potAtRetirement: isaPot,
+    potAtRetirement: isaPotAllIn,
     annualIncomeAtRetirement: isaIncome,
     limitExceeded: contribution > isaLimit,
-    limitNote: contribution > isaLimit
-      ? `Exceeds the ${fmtGBP(isaLimit)}/yr ISA allowance. You can only invest up to ${fmtGBP(isaLimit)} across all ISAs in a tax year.`
-      : null,
-    incomeBreakdown: [
-      { label: 'Pot at retirement (all tax-free)', value: fmtGBP(isaPot) },
-      { label: '25% taken as cash upfront', value: fmtGBP(isaPot * 0.25), note: 'No tax — take any time' },
-      { label: '4% annual drawdown', value: `${fmtGBP(isaIncome, 0)}/yr`, note: '100% tax-free income' },
-    ],
-    highlights: [
-      `Invest ${fmtGBP(contribution)}/yr from take-home pay`,
-      existingIsaPot > 0
-        ? `Existing ${fmtGBP(existingIsaPot)} pot + ISA allocations → ${fmtGBP(isaPot)} at age ${retirementAge} (today's money)`
-        : `Grows tax-free to ${fmtGBP(isaPot)} at age ${retirementAge} (${fmtPct(realReturnRate, 1)}/yr real growth)`,
-
-      `4% drawdown → ~${fmtGBP(isaIncome, 0)}/yr fully tax-free income`,
-      'No lock-in — withdraw any time, at any age',
-      `⚠️ Annual ISA limit: ${fmtGBP(isaLimit)}/yr across all your ISAs`,
-    ],
-    pros: 'Full flexibility. No lock-in. Withdrawals always 100% tax-free. Great for bridging to pension access age.',
-    cons: 'No upfront tax relief. Paid from already-taxed take-home pay.',
+    _phasePot: isaPotPhase,
   };
 
-  // ── SIPP ───────────────────────────────────────────────────────────────────
-  // Pay `contribution` net → govt adds 20% basic-rate relief at source
-  // Higher/additional rate payers reclaim more via Self Assessment
-  const sippGrossLimit     = Math.min(60000, salary); // Annual Allowance, capped at 100% of earnings
-  const sippNetLimit       = Math.floor(sippGrossLimit / 1.25);
-  const sippGovTopUp       = contribution * (20 / 80);
-  const sippGross          = contribution + sippGovTopUp;
-  const sippExtraRelief    = taxRate > 0.20 ? sippGross * (taxRate - 0.20) : 0;
-  const sippNetCost        = contribution - sippExtraRelief;
-  const existingSippGrowth  = existingSippPot > 0 ? existingSippPot * Math.pow(1 + realReturnRate, years) : 0;
-  const sippPot             = projectPot(sippGross, years, realReturnRate) + existingSippGrowth;
-  const sippTaxFreeLump     = sippPot * 0.25;
-  const sippAnnualDrawdown  = sippPot * 0.75 * 0.04; // 4% of remaining 75% after lump
+  // ── SIPP calculation ───────────────────────────────────────────────────
+  const sippGovTopUp = contribution * (20 / 80);
+  const sippGross = contribution + sippGovTopUp;
+  const sippExtraRelief = taxRate > 0.20 ? sippGross * (taxRate - 0.20) : 0;
+  const sippNetCost = contribution - sippExtraRelief;
+  const existingSippGrowth = (existingSippPot > 0 ? existingSippPot * Math.pow(1 + realReturnRate, years) : 0);
+  const sippPot = projectPot(sippGross, years, realReturnRate) + existingSippGrowth;
+  const sippTaxFreeLump = sippPot * 0.25;
+  const sippAnnualDrawdown = sippPot * 0.75 * 0.04;
   const sipp = {
     id: 'sipp', name: 'SIPP (Private Pension)', icon: '🏦', color: '#8b5cf6',
     costToYou: sippNetCost, taxSaving: sippGovTopUp + sippExtraRelief, niSaving: 0,
@@ -309,137 +366,71 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
     annualIncomeAtRetirement: sippAnnualDrawdown,
     taxFreeLump: sippTaxFreeLump,
     limitExceeded: contribution > sippNetLimit,
-    limitNote: contribution > sippNetLimit
-      ? `Net contribution exceeds your Annual Allowance. Max you can pay in: ${fmtGBP(sippNetLimit)}/yr net (${fmtGBP(sippGrossLimit)} gross including govt top-up).`
-      : null,
-    incomeBreakdown: [
-      { label: '25% tax-free lump sum', value: fmtGBP(sippTaxFreeLump), note: 'Take at retirement — zero tax' },
-      { label: 'Remaining pot (drawdown)', value: fmtGBP(sippPot * 0.75), note: 'Stays invested, drawn as income' },
-      { label: '4% annual drawdown', value: `${fmtGBP(sippAnnualDrawdown, 0)}/yr`, note: 'Taxable income (after personal allowance)' },
-    ],
-    highlights: [
-      `Pay ${fmtGBP(contribution)} → govt adds ${fmtGBP(sippGovTopUp)} (basic-rate relief at source)`,
-      taxRate > 0.20
-        ? `Reclaim extra ${fmtGBP(sippExtraRelief)}/yr via Self Assessment (${fmtPct(taxRate - 0.20)} extra)`
-        : 'Basic-rate taxpayer — full relief applied at source, nothing extra to claim',
-      existingSippPot > 0
-        ? `Existing ${fmtGBP(existingSippPot)} pot + ${fmtGBP(sippGross)}/yr new → ${fmtGBP(sippPot)} at age ${retirementAge} (today's money)`
-        : `Total invested: ${fmtGBP(sippGross)}/yr → grows to ${fmtGBP(sippPot)} at age ${retirementAge} (today's money)`,
-
-      `25% tax-free: ${fmtGBP(sippTaxFreeLump)} lump + ${fmtGBP(sippAnnualDrawdown, 0)}/yr taxable income`,
-      'Accessible from age 57',
-    ],
-    pros: taxRate >= 0.40
-      ? `Higher-rate taxpayer: every ${fmtGBP(sippNetCost)} net buys ${fmtGBP(sippGross)} invested. Claim your ${fmtGBP(sippExtraRelief)}/yr back!`
-      : 'Govt adds 25% on top of your contribution instantly. Strong long-term value.',
-    cons: 'Locked until age 57. Withdrawals beyond 25% lump taxed as income.',
-  };
-
-  // ── AFPS 15 Added Pension ──────────────────────────────────────────────────
-  // Salary sacrifice: saves BOTH income tax AND NI on the full amount
-  const apTaxSaving = contribution * taxRate;
-  const apNISaving  = contribution * niRate;
-  const apNetCost   = contribution - apTaxSaving - apNISaving;
-
-  // Only contribute while still in MOD service
-  const effectiveLeaveAge = Math.min(Math.max(leaveAge, age), retirementAge);
-  const leaveYears        = Math.max(0, effectiveLeaveAge - age);
-  const alreadyLeft       = leaveAge <= age;
-
-  // Annual pension bought per year using cost-per-£100 factor from AFPS 15 booklet
-  const AP_LIFETIME_MAX       = 8571.21;  // max added pension you can RECEIVE per year in retirement
-  const AP_MAX_MULTIPLES      = AP_LIFETIME_MAX / 100; // 85.7121 multiples of £100
-  const PERIODIC_LOADING       = 1.37;     // monthly payments cost ~37% more than single premium
-  const estimatedCostPer100sp  = Math.round(800 * Math.pow(1.042, age - 20));
-  const estimatedCostPer100ap  = apPaymentType === 'periodic'
-    ? Math.round(estimatedCostPer100sp * PERIODIC_LOADING)
-    : estimatedCostPer100sp;
-  const costPer100actual      = apCostPer100 > 0 ? apCostPer100 : estimatedCostPer100ap;
-  const blocksPerYear         = contribution / costPer100actual;
-  const pensionPerYear        = blocksPerYear * 100; // £100 added pension per block purchased
-
-  // AFPS 15 CAREER CAP: max £8,571.21/yr of added pension RECEIVABLE in retirement
-  // This is NOT a limit on contributions — it's the max pension income you can buy across your career
-  const totalPensionRaw       = pensionPerYear * leaveYears;
-  const totalPensionAcquired  = Math.min(totalPensionRaw, AP_LIFETIME_MAX);
-  const willHitCap            = totalPensionRaw > AP_LIFETIME_MAX;
-  const yearsToHitCap         = pensionPerYear > 0 ? Math.ceil(AP_LIFETIME_MAX / pensionPerYear) : leaveYears;
-  const blocksTotal           = blocksPerYear * leaveYears;
-  const blocksRemaining       = Math.max(0, AP_MAX_MULTIPLES - blocksTotal);
-  // Max annual contribution that stays within lifetime cap spread over leaveYears
-  const apMaxAnnualByLifetime = leaveYears > 0
-    ? Math.round((AP_LIFETIME_MAX / 100) * costPer100actual / leaveYears)
-    : Math.round(AP_MAX_MULTIPLES * costPer100actual);
-  const apMaxContrib          = Math.min(apMaxAnnualByLifetime, 60000);
-  const apLimitExceeded       = !alreadyLeft && (willHitCap || contribution > 60000);
-
-  const edpEligible = age >= 40 && yearsService >= 20 && age < 60;
-  const edpLumpSum  = edpEligible ? totalPensionAcquired * 2.25 : 0;
-  const edpIncome   = edpEligible ? totalPensionAcquired * 0.34 : 0;
-  const apPot       = totalPensionAcquired * 25 + edpLumpSum;
-  const addedPension = {
-    id: 'addedpension', name: 'AFPS 15 Added Pension', icon: '🎖️', color: '#10b981',
-    costToYou: alreadyLeft ? 0 : apNetCost,
-    taxSaving: alreadyLeft ? 0 : apTaxSaving,
-    niSaving:  alreadyLeft ? 0 : apNISaving,
-    potAtRetirement: apPot,
-    annualIncomeAtRetirement: totalPensionAcquired,
-    edpEligible, edpLumpSum, edpIncome, totalPensionAcquired, pensionPerYear, leaveYears,
-    limitExceeded: apLimitExceeded,
-    limitNote: alreadyLeft
-      ? `You've already left MOD service — no further contributions possible. Existing Added Pension is preserved and CPI-linked until retirement.`
-      : willHitCap
-      ? `At ${fmtGBP(contribution)}/yr you'll reach the career cap of ${fmtGBP(AP_LIFETIME_MAX, 0)}/yr receivable pension after ${yearsToHitCap} year${yearsToHitCap !== 1 ? 's' : ''} (age ${age + yearsToHitCap}). This is the max pension you can receive — not a limit on contributions. To spread it evenly over ${leaveYears} years of service: max ~${fmtGBP(apMaxContrib)}/yr.`
-      : contribution > 60000
-      ? `Exceeds HMRC Annual Allowance of £60,000/yr.`
-      : null,
-    incomeBreakdown: alreadyLeft ? [
-      { label: 'Total added pension (frozen)', value: `${fmtGBP(totalPensionAcquired, 0)}/yr`, note: 'CPI-linked from leaving date to retirement' },
-    ] : [
-      { label: `Annual pension after ${leaveYears} yr${leaveYears !== 1 ? 's' : ''} contributing`, value: `${fmtGBP(totalPensionAcquired, 0)}/yr`, note: `${willHitCap ? `Career cap: max ${fmtGBP(AP_LIFETIME_MAX, 0)}/yr receivable (hit after ${yearsToHitCap} yrs)` : 'CPI-linked for life'}` },
-      ...(edpEligible ? [
-        { label: 'EDP tax-free lump sum', value: fmtGBP(edpLumpSum), note: '2.25× pension — zero tax' },
-        { label: 'EDP annual income', value: `${fmtGBP(edpIncome, 0)}/yr`, note: '34% of deferred pension' },
-      ] : [
-        { label: 'Future EDP potential', value: `${fmtGBP(totalPensionAcquired * 2.25)} lump`, note: `+${fmtGBP(totalPensionAcquired * 0.34, 0)}/yr — unlocks at age 40 + 20 yrs service` },
-      ]),
-    ],
-    highlights: alreadyLeft ? [
-      `Already left MOD — no new contributions possible`,
-      `Preserved pension: ${fmtGBP(totalPensionAcquired, 0)}/yr (deferred, CPI-linked)`,
-    ] : [
-      `Contribute for ${leaveYears} yr${leaveYears !== 1 ? 's' : ''} (age ${age}–${effectiveLeaveAge}), then pension deferred`,
-      `Net cost: ${fmtGBP(apNetCost)}/yr (saves ${fmtGBP(apTaxSaving + apNISaving)}/yr in tax + NI)`,
-      `Builds ${fmtGBP(totalPensionAcquired, 0)}/yr guaranteed CPI-linked pension for life`,
-      willHitCap
-        ? `⚠️ Career cap reached at age ${age + yearsToHitCap} — max ${fmtGBP(AP_LIFETIME_MAX, 0)}/yr receivable pension. Further contributions won't buy more.`
-        : `Career cap: ${fmtGBP(AP_LIFETIME_MAX, 0)}/yr max receivable pension — you'll acquire ${fmtGBP(totalPensionRaw, 0)}/yr (${(totalPensionRaw / AP_LIFETIME_MAX * 100).toFixed(0)}% of limit)`,
-      blocksTotal > 0 ? `Buying ${blocksPerYear.toFixed(1)} multiples/yr → ${blocksTotal.toFixed(1)} total (${blocksRemaining > 0 ? blocksRemaining.toFixed(1) + ' multiples remaining' : 'at cap'})` : `0 multiples purchased`,
-
-      edpEligible
-        ? `🎯 EDP reached: +${fmtGBP(edpLumpSum)} lump sum & +${fmtGBP(edpIncome, 0)}/yr EDP income!`
-        : `EDP unlocks at age 40 + 20 yrs service`,
-    ],
-    pros: alreadyLeft
-      ? 'Deferred AFPS 15 pension is guaranteed and CPI-linked — one of the best inflation-protected income sources in retirement.'
-      : edpEligible
-      ? `You're at EDP point! Every £1 of Added Pension adds £2.25 to your tax-free EDP lump sum.`
-      : `Saves ${fmtPct(taxRate)} income tax AND ${fmtPct(niRate)} NI via salary sacrifice over ${leaveYears} years of MOD service.`,
-    cons: alreadyLeft
-      ? 'Cannot contribute more. No flexibility — pension cannot be taken as cash.'
-      : 'Locked within AFPS 15. No flexibility. Stops accruing when you leave service.',
   };
 
   // ── Rank by efficiency ─────────────────────────────────────────────────────
   // Efficiency = pot value per £1 of personal net cost (tax/NI savings already
   // reflected in the lower costToYou, so we don't add them to the numerator).
-  const options = [isa, sipp, addedPension].map(o => ({
+  // Exclude MOD-only option for civilians
+  const baseOptions = [isa, sipp];
+  const optionsList = isServing ? [...baseOptions, addedPension] : baseOptions;
+  const options = optionsList.map(o => ({
     ...o,
     efficiency: o.costToYou > 0 ? o.potAtRetirement / o.costToYou : 1,
   }));
   options.sort((a, b) => b.efficiency - a.efficiency);
   options.forEach((o, i) => (o.rank = i + 1));
   const maxEfficiency = options[0].efficiency;
+
+  // Build user-facing pros/cons/highlights for each option
+  options.forEach(o => {
+    if (!Array.isArray(o.highlights)) o.highlights = [];
+    if (typeof o.incomeBreakdown === 'undefined') o.incomeBreakdown = null;
+
+    if (o.id === 'sipp') {
+      o.pros = o.pros || 'Generous tax relief and government top-up — great for long-term growth.';
+      o.cons = o.cons || 'Locked until 57; withdrawals above PA are taxable.';
+      o.highlights = o.highlights.length ? o.highlights : [
+        `Govt top-up: ${fmtGBP(o.taxSaving || 0)}`,
+        `Tax relief now: ${fmtPct(taxRate)}`,
+      ];
+      o.incomeBreakdown = o.incomeBreakdown || [
+        { label: 'Tax-free lump (25%)', value: fmtGBP(o.taxFreeLump || 0) },
+        { label: 'Annual drawdown (est)', value: fmtGBP(o.annualIncomeAtRetirement || 0) },
+      ];
+    } else if (o.id === 'isa') {
+      o.pros = o.pros || 'Tax-free growth and flexible access — ideal for medium-term goals.';
+      o.cons = o.cons || 'No upfront tax relief; annual allowance applies.';
+      o.highlights = o.highlights.length ? o.highlights : [
+        `Tax-free withdrawals`,
+        `Annual allowance: £20,000`,
+      ];
+      o.incomeBreakdown = o.incomeBreakdown || [
+        { label: 'Annual drawdown (est)', value: fmtGBP(o.annualIncomeAtRetirement || 0) },
+      ];
+    } else if (o.id === 'addedpension') {
+      if (isServing) {
+        o.pros = o.pros || 'Very high efficiency for serving personnel — guaranteed CPI-linked pension for life.';
+        o.cons = o.cons || 'Career cap applies; contributions may be limited.';
+        o.highlights = o.highlights.length ? o.highlights : [
+          `Guaranteed CPI-linked pension`,
+          o.limitExceeded ? 'Career cap: may be reached' : 'No cap hit expected',
+        ];
+        o.incomeBreakdown = o.incomeBreakdown || [
+          { label: 'Annual AFPS pension', value: fmtGBP(o.annualIncomeAtRetirement || 0) },
+          ...(o.edpEligible ? [{ label: 'EDP lump (one-off)', value: fmtGBP(o.edpLumpSum || 0) }] : []),
+        ];
+      } else {
+        o.pros = o.pros || 'Not available unless currently serving.';
+        o.cons = o.cons || 'Only applies to active MOD service members.';
+        o.highlights = [];
+        o.incomeBreakdown = null;
+      }
+    } else {
+      if (typeof o.pros === 'undefined') o.pros = '';
+      if (typeof o.cons === 'undefined') o.cons = '';
+    }
+  });
 
   // ── Recommendation ──────────────────────────────────────────────────────────
   const best = options[0];
@@ -465,232 +456,50 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
   // If already left or leaveAge <= age, there's only one phase (no AP).
   // If leaveAge >= retirementAge, there's also only one phase (serving throughout).
 
-  function buildPhaseSteps(budget, includeAP, phaseYears) {
-    const steps = [];
-    let remaining = budget;
-
-    // AP — only if still serving in this phase
-    if (includeAP && !alreadyLeft && leaveYears > 0 && remaining > 0) {
-      const apAlloc = Math.min(remaining, apMaxContrib);
-      if (apAlloc > 0) {
-        const apNet = apAlloc * (1 - taxRate - niRate);
-        const apSaved = apAlloc - apNet;
-        const apBPY = apAlloc / costPer100actual;
-        const apPensionForPhase = Math.min(apBPY * 100 * Math.min(phaseYears, leaveYears), AP_LIFETIME_MAX);
-        steps.push({
-          vehicle: 'AFPS 15 Added Pension', icon: '🎖️', color: '#10b981', priority: 1,
-          gross: apAlloc, netCost: apNet, saving: apSaved,
-          outcome: `Buys ${fmtGBP(apPensionForPhase, 0)}/yr guaranteed CPI-linked pension for life`,
-          reason: `Salary sacrifice saves ${fmtPct(taxRate)} income tax + ${fmtPct(niRate)} NI = ${fmtPct(taxRate + niRate)} total. Every ${fmtGBP(1)} gross costs just ${fmtGBP(1 - taxRate - niRate, 2)} net.`,
-          note: apAlloc >= apMaxContrib
-            ? `Capped at ~${fmtGBP(apMaxContrib)}/yr to stay within the ${fmtGBP(AP_LIFETIME_MAX, 0)}/yr career limit on pension receivable over ${leaveYears} years.`
-            : null,
-        });
-        remaining -= apAlloc;
-      }
-    }
-
-    // SIPP
-    const paFilledPotLocal = 12570 / (0.75 * 0.04);
-    const fvFactorLocal    = phaseYears > 0 ? ((Math.pow(1 + realReturnRate, phaseYears) - 1) / realReturnRate) * (1 + realReturnRate) : 1;
-    const sippMaxForPALocal = Math.min((paFilledPotLocal / fvFactorLocal) / 1.25, remaining);
-
-    if (remaining > 0) {
-      let sippAlloc;
-      let sippReason;
-
-      if (taxRate >= 0.40) {
-        sippAlloc = Math.min(remaining, sippNetLimit);
-        sippReason = taxRate >= 0.60
-          ? `60% taper trap — SIPP saves 60% now, ~20% tax in retirement = permanent 40% saving per £1.`
-          : `Higher-rate: ${fmtPct(taxRate)} relief now vs ~20% in retirement = permanent ${fmtPct(taxRate - 0.20)} saving.`;
-      } else if (taxRate >= 0.20) {
-        sippAlloc = Math.min(remaining, Math.max(0, sippMaxForPALocal), sippNetLimit);
-        sippReason = sippMaxForPALocal < remaining
-          ? `Basic-rate: SIPP top-up is best up to where retirement drawdown stays within your £12,570 PA (no tax). Beyond this, ISA avoids the 20% withdrawal tax.`
-          : `Basic-rate: all SIPP drawdown stays within PA at retirement — the 25% govt top-up is pure profit.`;
-      } else {
-        sippAlloc = Math.min(remaining, Math.max(0, sippMaxForPALocal), sippNetLimit);
-        sippReason = `The SIPP's 25% government top-up applies even at 0% tax. Keep drawdown within PA.`;
-      }
-
-      if (sippAlloc > 0) {
-        const sAlloc    = Math.round(sippAlloc);
-        const sGross    = sAlloc * 1.25;
-        const sExtra    = taxRate > 0.20 ? sGross * (taxRate - 0.20) : 0;
-        const sNet      = sAlloc - sExtra;
-        const sSaved    = sAlloc - sNet;
-        const sGovTopUp = sGross - sAlloc;
-        const sPotEst   = projectPot(sGross, phaseYears, realReturnRate);
-        steps.push({
-          vehicle: 'SIPP (Private Pension)', icon: '🏦', color: '#8b5cf6', priority: 2,
-          gross: sAlloc, netCost: sNet, saving: sSaved, govTopUp: sGovTopUp,
-          outcome: `${fmtGBP(sAlloc)} net → ${fmtGBP(sGross)} invested (govt adds ${fmtGBP(sGovTopUp)}) → grows to ${fmtGBP(sPotEst, 0)} over ${phaseYears} yrs`,
-          reason: sippReason,
-          note: taxRate > 0.20 ? `Claim ${fmtGBP(sExtra, 0)}/yr back via Self Assessment.` : null,
-        });
-        remaining -= sAlloc;
-      }
-    }
-
-    // ISA
-    if (remaining > 0) {
-      const isaAlloc  = Math.min(remaining, 20000);
-      const isaPotEst = projectPot(isaAlloc, phaseYears, realReturnRate);
-      steps.push({
-        vehicle: 'Stocks & Shares ISA', icon: '💰', color: '#3b82f6', priority: 3,
-        gross: isaAlloc, netCost: isaAlloc, saving: 0,
-        outcome: `Grows tax-free to ${fmtGBP(isaPotEst, 0)} → ${fmtGBP(isaPotEst * 0.04, 0)}/yr income over ${phaseYears} yrs`,
-        reason: 'Tax-free growth and withdrawals. No lock-in — accessible at any age. Great for bridging to pension age 57.',
-        note: isaAlloc >= 20000 && remaining > 20000
-          ? `⚠️ ISA limit is £20,000/yr. The remaining ${fmtGBP(remaining - 20000)} would need a GIA.`
-          : null,
-      });
-      remaining -= isaAlloc;
-    }
-
-    // GIA overflow
-    if (remaining > 0) {
-      steps.push({
-        vehicle: 'General Investment Account', icon: '📊', color: '#94a3b8', priority: 4,
-        gross: remaining, netCost: remaining, saving: 0,
-        outcome: `Invest in a GIA — gains subject to CGT (£3,000 exempt). Dividends taxed above £1,000.`,
-        reason: 'All tax-advantaged wrappers full. A GIA still grows wealth, just without a tax shelter.',
-        note: null,
-      });
-    }
-
-    return steps;
-  }
-
-  // Determine phases
-  const phases = [];
-  const servingUntil  = Math.min(Math.max(leaveAge, age), retirementAge);
-  const servingYears  = Math.max(0, servingUntil - age);
-  const postLeaveYears = Math.max(0, retirementAge - servingUntil);
-
-  if (!alreadyLeft && servingYears > 0) {
-    const phase1Steps = buildPhaseSteps(contribution, true, servingYears);
-    phases.push({
-      label: `While Serving (age ${age}–${servingUntil})`,
-      subtitle: `${servingYears} year${servingYears !== 1 ? 's' : ''} — includes AFPS 15 Added Pension via salary sacrifice`,
-      years: servingYears, icon: '🎖️',
-      steps: phase1Steps,
-      totalGross: phase1Steps.reduce((s, st) => s + st.gross, 0),
-      totalNet: phase1Steps.reduce((s, st) => s + st.netCost, 0),
-    });
-  }
-
-  if (postLeaveYears > 0 || alreadyLeft) {
-    const phase2Years = alreadyLeft ? years : postLeaveYears;
-    const phase2Start = alreadyLeft ? age : servingUntil;
-    if (phase2Years > 0) {
-      const phase2Steps = buildPhaseSteps(contribution, false, phase2Years);
-      phases.push({
-        label: alreadyLeft
-          ? `Now to Retirement (age ${phase2Start}–${retirementAge})`
-          : `After Leaving MOD (age ${phase2Start}–${retirementAge})`,
-        subtitle: alreadyLeft
-          ? `${phase2Years} year${phase2Years !== 1 ? 's' : ''} — no AP available, redirect full budget to SIPP + ISA`
-          : `${phase2Years} year${phase2Years !== 1 ? 's' : ''} — AP no longer available, full ${fmtGBP(contribution)}/yr redirected to SIPP + ISA`,
-        years: phase2Years, icon: alreadyLeft ? '📋' : '🔄',
-        steps: phase2Steps,
-        totalGross: phase2Steps.reduce((s, st) => s + st.gross, 0),
-        totalNet: phase2Steps.reduce((s, st) => s + st.netCost, 0),
-      });
-    }
-  }
-
-  // If serving all the way to retirement, there's only phase 1 — no second phase needed
-  // Phases array handles this automatically (postLeaveYears = 0)
-
-  const allSteps     = phases.flatMap(p => p.steps);
-  const apTotalGross = allSteps.reduce((s, st) => s + st.gross, 0);
-  const apTotalNet   = allSteps.reduce((s, st) => s + st.netCost, 0);
-  const apTotalSaved = apTotalGross - apTotalNet;
-
-  const actionPlan = {
-    phases,
-    totalGross: contribution, // budget per year (same each phase)
-    totalNet: phases.length > 0 ? phases[0].totalNet : contribution,
-    totalSaved: apTotalSaved,
-    alreadyLeft,
-  };
-
-  // Build per-phase allocation breakdown for the chart
-  // Each phase has: { startAge, endAge, ap, sippNet, sippGross, isa }
-  let phaseStart = age;
-  for (const phase of phases) {
-    const apStep   = phase.steps.find(s => s.vehicle.includes('Added Pension'));
-    const sippStep = phase.steps.find(s => s.vehicle.includes('SIPP'));
-    const isaStep  = phase.steps.find(s => s.vehicle.includes('ISA'));
-    const sGross   = sippStep ? sippStep.gross : 0;
-    phaseAllocations.push({
-      startAge: phaseStart,
-      endAge:   phaseStart + phase.years,
-      ap:       apStep ? apStep.gross : 0,
-      sippNet:  sGross,
-      sippGross: sGross * 1.25,
-      isa:      isaStep ? isaStep.gross : 0,
-    });
-    phaseStart += phase.years;
-  }
-  // Fallback if no phases (shouldn't happen, but safety)
-  if (phaseAllocations.length === 0) {
-    phaseAllocations.push({ startAge: age, endAge: retirementAge, ap: 0, sippNet: 0, sippGross: 0, isa: contribution });
-  }
-
-  // ── Mortgage & Cash Analysis ─────────────────────────────────────────────
-  const hasMortgage = mortgageBalance > 0 && mortgageRate > 0;
-  const hasCash     = cashReserve > 0 || monthlyExpenses > 0;
-  const emergencyTarget = monthlyExpenses > 0 ? monthlyExpenses * 6 : 0; // 6 months expenses
-  const emergencyShortfall = emergencyTarget > 0 ? Math.max(0, emergencyTarget - cashReserve) : 0;
-  const emergencyOk = emergencyTarget > 0 && cashReserve >= emergencyTarget;
-
-  let mortgageAnalysis = null;
-  if (hasMortgage) {
-    const mortgRealRate = (1 + mortgageRate) / (1 + inflationRate) - 1; // real cost of debt
-    const mortgagePaidOffAge = mortgageTermYears > 0 ? Math.round(age + mortgageTermYears) : null;
-    const annualMortgage = monthlyMortgage > 0 ? monthlyMortgage * 12 : 0;
-
-    // Total interest cost over remaining term (simple estimate)
-    const totalInterestEst = annualMortgage > 0 && mortgageTermYears > 0
-      ? (annualMortgage * mortgageTermYears) - mortgageBalance
-      : mortgageBalance * mortgageRate * mortgageTermYears;
-
-    // Compare: guaranteed return from overpayment vs expected investment return
-    // Mortgage overpay saves mortgageRate interest (guaranteed, tax-free)
-    // ISA earns realReturnRate (uncertain, but tax-free)
-    // SIPP earns realReturnRate + tax relief (uncertain, taxed on withdrawal)
-    const overpayReturn = mortgageRate; // guaranteed, after-tax (since mortgage interest isn't deductible for residential)
-    const isaReturn     = realReturnRate; // tax-free but uncertain
-    const sippReturn    = realReturnRate; // + tax relief at contribution
-
-    // Net worth impact: equity at retirement
-    const equityNow       = Math.max(0, propertyValue - mortgageBalance);
-    const equityRetirement = mortgagePaidOffAge && mortgagePaidOffAge <= retirementAge
-      ? propertyValue // mortgage paid off
-      : propertyValue - Math.max(0, mortgageBalance - (annualMortgage > 0 ? annualMortgage * years * 0.4 : 0)); // rough estimate
-
-    const shouldOverpay = overpayReturn > isaReturn;
-    const verdict = shouldOverpay
-      ? `Your mortgage rate (${fmtPct(mortgageRate, 1)}) exceeds your expected real investment return (${fmtPct(realReturnRate, 1)}). Overpaying your mortgage gives a guaranteed, tax-free ${fmtPct(mortgageRate, 1)} return — better than investing right now.`
-      : `Your expected real investment return (${fmtPct(realReturnRate, 1)}) exceeds your mortgage rate (${fmtPct(mortgageRate, 1)}). Investing is likely better, though mortgage overpayment is risk-free.`;
-
-    mortgageAnalysis = {
-      mortgageBalance, mortgageRate, mortgageTermYears, monthlyMortgage, annualMortgage,
-      propertyValue, equityNow, equityRetirement,
-      mortgRealRate, totalInterestEst,
-      mortgagePaidOffAge, overpayReturn, isaReturn, sippReturn,
-      shouldOverpay, verdict,
-    };
-  }
+  // Action plan logic moved to separate modules (MOD vs Civilian)
 
   // Net worth at retirement
   const isaOptPot   = isa.potAtRetirement;
   const sippOptPot  = sipp.potAtRetirement;
   const apOptPot    = addedPension.potAtRetirement;
   const cashAtRetirement = cashReserve; // kept at nominal (inflation erodes it)
+  // FIRE number (4% rule) if user provided a target income
+  const fireNumber = (targetIncome && targetIncome > 0) ? targetIncome * 25 : 0;
+
+  // Tax summary helpers
+  const effectivePA = getEffectivePA(taxBasis, taxInfo.pa);
+  const effTaxRate = (salary > 0) ? ((incomeTax + ni) / salary) : 0;
+  const takeHome = salary - incomeTax - ni - salSacrifice - flatRateExpenses;
+
+  // Cash / emergency analysis
+  const hasCash = (cashReserve > 0 || monthlyExpenses > 0);
+  const emergencyTarget = monthlyExpenses * 6;
+  const emergencyShortfall = Math.max(0, emergencyTarget - cashReserve);
+  const emergencyOk = cashReserve >= emergencyTarget;
+
+  // Simple mortgage summary (used for equity and a basic overpay/invest verdict)
+  const equityNow = propertyValue - mortgageBalance;
+  const yearsUntilRetirement = Math.max(0, retirementAge - age);
+  const yearsToRepayBeforeRetire = Math.min(mortgageTermYears, yearsUntilRetirement);
+  const remainingBalanceAtRetire = Math.max(0, mortgageBalance - (monthlyMortgage * 12 * yearsToRepayBeforeRetire));
+  const equityRetirement = propertyValue - remainingBalanceAtRetire;
+  const shouldOverpay = mortgageRate > 0.05 && mortgageBalance > 0;
+  const mortgageVerdict = shouldOverpay
+    ? 'High mortgage rate — consider overpaying the mortgage if you have excess cash.'
+    : 'Low mortgage rate — consider investing excess cash for potentially higher returns.';
+  // Estimate total interest over remaining term (approx): payments - principal
+  const totalInterestEst = (monthlyMortgage > 0 && mortgageTermYears > 0)
+    ? Math.max(0, (monthlyMortgage * 12 * mortgageTermYears) - mortgageBalance)
+    : 0;
+  // Estimate mortgage paid-off age if payments provided
+  const mortgagePaidOffAge = (monthlyMortgage > 0 && mortgageBalance > 0)
+    ? age + Math.ceil(mortgageBalance / (monthlyMortgage * 12))
+    : null;
+  const mortgageAnalysis = {
+    propertyValue, mortgageBalance, mortgageRate, mortgageTermYears, monthlyMortgage,
+    equityNow, equityRetirement, shouldOverpay, verdict: mortgageVerdict,
+    totalInterestEst, mortgagePaidOffAge,
+  };
   const propertyEquityAtRetirement = mortgageAnalysis ? mortgageAnalysis.equityRetirement : propertyValue;
   const liquidWealth  = isaOptPot + sippOptPot;
   const totalNetWorth = liquidWealth + apOptPot + propertyEquityAtRetirement + cashAtRetirement;
@@ -1321,7 +1130,7 @@ function TotalWealthChart({ results, form }) {
 // RETIREMENT PICTURE CARD
 // Shows every income source combined — DB pension, Added Pension, ISA, SIPP
 // ─────────────────────────────────────────────────────────────────────────────
-function RetirementPictureCard({ results }) {
+function RetirementPictureCard({ results, isServing }) {
   const isaOpt  = results.options.find(o => o.id === 'isa');
   const sippOpt = results.options.find(o => o.id === 'sipp');
   const apOpt   = results.options.find(o => o.id === 'addedpension');
@@ -1332,9 +1141,9 @@ function RetirementPictureCard({ results }) {
   const retirementAge   = results.retirementAge     || 60;
   const hasDeferredIncome = retirementAge < statePensionAge;
 
-  const apAnnualFull = apOpt?.totalPensionAcquired || 0;
-  const edpLump    = apOpt?.edpLumpSum || 0;
-  const edpAnnual  = apOpt?.edpIncome || 0;
+  const apAnnualFull = (isServing && apOpt) ? apOpt.totalPensionAcquired || 0 : 0;
+  const edpLump    = (isServing && apOpt) ? apOpt.edpLumpSum || 0 : 0;
+  const edpAnnual  = (isServing && apOpt) ? apOpt.edpIncome || 0 : 0;
   const isaAnnual  = isaOpt?.annualIncomeAtRetirement || 0;
   const sippAnnual = sippOpt?.annualIncomeAtRetirement || 0;
   const sippLump   = sippOpt?.taxFreeLump || 0;
@@ -1359,15 +1168,15 @@ function RetirementPictureCard({ results }) {
   // Deferred sources that unlock at state pension age
   const deferredSources = [
     dbAnnual > 0     && { label: 'AFPS 15 DB Pension (from statement)', annual: dbAnnual,      color: '#10b981', icon: '\uD83C\uDF96\uFE0F' },
-    apAnnualFull > 0 && { label: 'AFPS 15 Added Pension (calculated)',  annual: apAnnualFull,  color: '#34d399', icon: '\u2795' },
+    (isServing && apAnnualFull > 0) && { label: 'AFPS 15 Added Pension (calculated)',  annual: apAnnualFull,  color: '#34d399', icon: '\u2795' },
     statePension > 0 && { label: 'State Pension',                       annual: statePension,  color: '#f59e0b', icon: '\uD83C\uDFDB\uFE0F' },
   ].filter(Boolean);
 
   // All sources combined (for non-deferred display when retirementAge >= SPA)
   const allSources = [
     dbAnnual > 0                          && { label: 'AFPS 15 DB Pension (from statement)', annual: dbAnnual,      color: '#10b981', note: 'Guaranteed, CPI-linked for life',      icon: '\uD83C\uDF96\uFE0F' },
-    apAnnualFull > 0                      && { label: 'AFPS 15 Added Pension (calculated)',  annual: apAnnualFull,  color: '#34d399', note: 'Guaranteed, CPI-linked for life',      icon: '\u2795' },
-    (apOpt?.edpEligible && edpAnnual > 0) && { label: 'EDP Annual Income',                  annual: edpAnnual,     color: '#6ee7b7', note: 'Enhanced Departure Payment',           icon: '\uD83C\uDFC6' },
+    (isServing && apAnnualFull > 0)      && { label: 'AFPS 15 Added Pension (calculated)',  annual: apAnnualFull,  color: '#34d399', note: 'Guaranteed, CPI-linked for life',      icon: '\u2795' },
+    (isServing && apOpt?.edpEligible && edpAnnual > 0) && { label: 'EDP Annual Income',                  annual: edpAnnual,     color: '#6ee7b7', note: 'Enhanced Departure Payment',           icon: '\uD83C\uDFC6' },
     isaAnnual > 0                         && { label: 'ISA Drawdown (4%/yr)',                 annual: isaAnnual,     color: '#3b82f6', note: '100% tax-free income',                icon: '\uD83D\uDCB0' },
     sippAnnual > 0                        && { label: 'SIPP Drawdown (4% of 75%)',            annual: sippAnnual,    color: '#a78bfa', note: 'Taxable above personal allowance',   icon: '\uD83C\uDFE6' },
     statePension > 0                      && { label: 'State Pension',                       annual: statePension,  color: '#f59e0b', note: 'Full new State Pension',              icon: '\uD83C\uDFDB\uFE0F' },
@@ -1513,7 +1322,7 @@ function ResultCard({ option, maxEfficiency, years }) {
         <span className="result-rank">{rankEmoji}</span>
       </div>
       <h3 className="result-card-name">{option.name}</h3>
-      {option.limitExceeded && (
+      {option.limitExceeded && option.limitNote && (
         <div className="limit-warning-banner">⚠️ {option.limitNote}</div>
       )}
       <div className="result-stats">
@@ -1595,6 +1404,7 @@ function App() {
     return () => document.removeEventListener('wheel', prevent);
   }, []);
   const [form, setForm] = useState({
+    isServing: true,
     salary: '', taxCode: '', age: '', yearsService: '',
     leaveAge: '', apCostPer100: '', apPaymentType: 'single',
     existingDbPension: '', existingIsaPot: '', existingSippPot: '',
@@ -1608,9 +1418,17 @@ function App() {
   const [showPropertyDetails, setShowPropertyDetails] = useState(false);
   const [results, setResults] = useState(null);
 
+  // Clear previous results when serving toggle changes (forces recalculation)
+  useEffect(() => {
+    setResults(null);
+  }, [form.isServing]);
+
   const handleChange = (e) => {
-    const { name, value } = e.target;
-    setForm(prev => ({ ...prev, [name]: value }));
+    const { name, type, value, checked } = e.target;
+    setForm(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value
+    }));
   };
 
   const taxSummaryRef = useRef(null);
@@ -1643,7 +1461,16 @@ function App() {
     const inflationRate     = parseFloat(form.inflationRate)     || 0.025;
     const targetIncome      = parseFloat(form.targetIncome)      || salary * 0.67;
     if (salary <= 0 || contribution <= 0) return;
-    setResults(buildResults({ salary, taxCode: form.taxCode, age, yearsService, leaveAge, apCostPer100, apPaymentType: form.apPaymentType, existingDbPension, existingIsaPot, existingSippPot, statePensionAge, statePension, contribution, retirementAge, returnRate, inflationRate, targetIncome, salSacrifice, flatRateExpenses, manualTaxablePay, propertyValue, mortgageBalance, mortgageRate, mortgageTermYears, monthlyMortgage, cashReserve, monthlyExpenses }));
+    setResults(buildResults({
+      salary, taxCode: form.taxCode, age,
+      yearsService: form.isServing ? yearsService : 0,
+      leaveAge: form.isServing ? leaveAge : retirementAge,
+      apCostPer100: form.isServing ? apCostPer100 : 0,
+      apPaymentType: form.isServing ? form.apPaymentType : 'single',
+      existingDbPension: form.isServing ? existingDbPension : 0,
+      existingIsaPot, existingSippPot, statePensionAge, statePension, contribution, retirementAge, returnRate, inflationRate, targetIncome, salSacrifice, flatRateExpenses, manualTaxablePay, propertyValue, mortgageBalance, mortgageRate, mortgageTermYears, monthlyMortgage, cashReserve, monthlyExpenses,
+      isServing: !!form.isServing
+    }));
     setTimeout(() => {
       if (taxSummaryRef.current) {
         taxSummaryRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1785,6 +1612,19 @@ function App() {
       {/* ── Input Form ── */}
       <div className="form-card">
         <form onSubmit={handleSubmit}>
+          <div className="form-group" style={{ gridColumn: '1 / -1', marginBottom: '1em' }}>
+            <label htmlFor="isServing" style={{ fontWeight: 600 }}>
+              <input
+                id="isServing"
+                name="isServing"
+                type="checkbox"
+                checked={form.isServing}
+                onChange={handleChange}
+                style={{ marginRight: '0.5em' }}
+              />
+              Currently serving in the military (show MOD-specific options)
+            </label>
+          </div>
           <p className="form-section-label">Your Details</p>
           <div className="form-grid">
             <div className="form-group">
@@ -1806,168 +1646,178 @@ function App() {
               <label htmlFor="age">Age<span className="required-star">*</span></label>
               <input id="age" className="bare-input" name="age" type="number" placeholder="35" min="18" max="65" value={form.age} onChange={handleChange} required />
             </div>
-            <div className="form-group">
-              <div className="label-row">
-                <label htmlFor="yearsService">Years of Reckonable Service <span className="label-hint">(for EDP eligibility only)</span><span className="required-star">*</span></label>
-                <InfoHint>Only used to check EDP eligibility (age 40–59 + 20 yrs service). Has no effect on the Added Pension calculation itself.</InfoHint>
+            {form.isServing && (
+              <div className="form-group">
+                <div className="label-row">
+                  <label htmlFor="yearsService">Years of Reckonable Service <span className="label-hint">(for EDP eligibility only)</span><span className="required-star">*</span></label>
+                  <InfoHint>Only used to check EDP eligibility (age 40–59 + 20 yrs service). Has no effect on the Added Pension calculation itself.</InfoHint>
+                </div>
+                <input id="yearsService" className="bare-input" name="yearsService" type="number" placeholder="10" min="0" max="45" value={form.yearsService} onChange={handleChange} required={form.isServing} />
               </div>
-              <input id="yearsService" className="bare-input" name="yearsService" type="number" placeholder="10" min="0" max="45" value={form.yearsService} onChange={handleChange} required />
-            </div>
+            )}
 
             {/* Collapsible payslip details */}
-            <div className="form-group payslip-toggle-wrapper" style={{ gridColumn: '1 / -1' }}>
-              <button type="button" className={`payslip-toggle-btn ${showPayslipDetails ? 'active' : ''}`}
-                onClick={() => setShowPayslipDetails(prev => !prev)}>
-                <span className="payslip-toggle-icon">{showPayslipDetails ? '▾' : '▸'}</span>
-                🎖️ I have my MOD payslip — fine-tune my tax calculation
-              </button>
-              <InfoHint>Optional: enter figures from your payslip to get more accurate tax/NI calculations. If you skip this, the app uses your gross salary which is fine for most estimates.</InfoHint>
-              {showPayslipDetails && (
-                <div className="payslip-details-panel">
-                  <div className="payslip-annual-callout">
-                    <strong>⚠️ Use annual (full-year) figures</strong> — from your <strong>March payslip</strong> (year-to-date totals) or your <strong>P60</strong>. Don't use a single month's figures — they won't match the annual tax calculation.
-                  </div>
-                  <p className="payslip-panel-intro">
-                    Your MOD payslip shows both monthly and year-to-date (YTD) columns. Use the <strong>YTD totals</strong> from your final payslip of the tax year (March/April), or your P60. The gaps between Gross, NIable, and Taxable Pay are your pre-tax deductions.
-                  </p>
-                  <div className="deductions-grid">
-                    <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-                      <div className="label-row">
-                        <label htmlFor="manualTaxablePay" className="sub-label">Easiest: Actual Taxable Pay <span className="label-hint">(annual YTD from payslip or P60)</span></label>
-                        <InfoHint>Just copy the YTD “Taxable Pay” figure from your end-of-year payslip or P60. This is the quickest way — it overrides the two optional fields below.</InfoHint>
-                      </div>
-                      <div className="input-wrap">
-                        <span className="input-prefix">£</span>
-                        <input id="manualTaxablePay" name="manualTaxablePay" type="number" placeholder="0" min="0" value={form.manualTaxablePay} onChange={handleChange} />
-                        <span className="input-suffix">/yr</span>
-                      </div>
+            {form.isServing && (
+              <div className="form-group payslip-toggle-wrapper" style={{ gridColumn: '1 / -1' }}>
+                <button type="button" className={`payslip-toggle-btn ${showPayslipDetails ? 'active' : ''}`}
+                  onClick={() => setShowPayslipDetails(prev => !prev)}>
+                  <span className="payslip-toggle-icon">{showPayslipDetails ? '▾' : '▸'}</span>
+                  🎖️ I have my MOD payslip — fine-tune my tax calculation
+                </button>
+                <InfoHint>Optional: enter figures from your payslip to get more accurate tax/NI calculations. If you skip this, the app uses your gross salary which is fine for most estimates.</InfoHint>
+                {showPayslipDetails && (
+                  <div className="payslip-details-panel">
+                    <div className="payslip-annual-callout">
+                      <strong>⚠️ Use annual (full-year) figures</strong> — from your <strong>March payslip</strong> (year-to-date totals) or your <strong>P60</strong>. Don't use a single month's figures — they won't match the annual tax calculation.
                     </div>
-                    <div className="deductions-divider">— or break it down manually —</div>
-                    <div className="form-group">
-                      <div className="label-row">
-                        <label htmlFor="salSacrifice" className="sub-label">Salary Sacrifice / Pension Deductions <span className="label-hint">(annual YTD)</span></label>
-                        <InfoHint>
-                          Annual total: YTD Gross Pay − YTD NIable Pay from your payslip. Includes: Added Pension contributions, SAYE, Cycle to Work, childcare vouchers.
-                          {liveSalary > 0 && !form.salSacrifice && <><br/><strong style={{color:'#f59e0b'}}>Tip:</strong> Your gross is {fmtGBP(liveSalary)}. Find your YTD "NIable Pay" — the difference is this field.</>}
-                        </InfoHint>
-                      </div>
-                      <div className="input-wrap">
-                        <span className="input-prefix">£</span>
-                        <input id="salSacrifice" name="salSacrifice" type="number" placeholder="0" min="0" value={form.salSacrifice} onChange={handleChange} />
-                        <span className="input-suffix">/yr</span>
-                      </div>
-                    </div>
-                    <div className="form-group">
-                      <div className="label-row">
-                        <label htmlFor="flatRateExpenses" className="sub-label">Flat-Rate Employment Expenses <span className="label-hint">(annual)</span></label>
-                        <InfoHint>Annual total of HMRC-approved deductions: uniform/laundry allowance (£91.63/yr standard for Armed Forces), professional subscriptions, tools. These reduce taxable pay but NOT NIable pay.</InfoHint>
-                      </div>
-                      <div className="input-wrap">
-                        <span className="input-prefix">£</span>
-                        <input id="flatRateExpenses" name="flatRateExpenses" type="number" placeholder="0" min="0" value={form.flatRateExpenses} onChange={handleChange} />
-                        <span className="input-suffix">/yr</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Live payslip reconciliation */}
-                  {liveSalary > 0 && (liveSalSac > 0 || liveFlatExp > 0 || liveManualTaxable > 0) && (() => {
-                    const niable = liveSalary - liveSalSac;
-                    const taxable = liveManualTaxable > 0 ? liveManualTaxable : liveSalary - liveSalSac - liveFlatExp;
-                    return (
-                      <div className="payslip-reconciliation">
-                        <p className="payslip-title">📋 Annual Payslip Reconciliation</p>
-                        <div className="payslip-rows">
-                          <div className="payslip-row">
-                            <span>Gross Pay</span>
-                            <span>{fmtGBP(liveSalary)}</span>
-                          </div>
-                          {liveSalSac > 0 && <div className="payslip-row deduction">
-                            <span>− Salary sacrifice / pension</span>
-                            <span>−{fmtGBP(liveSalSac)}</span>
-                          </div>}
-                          <div className="payslip-row subtotal">
-                            <span>= NIable Pay</span>
-                            <span>{fmtGBP(niable)}</span>
-                          </div>
-                          {liveFlatExp > 0 && !liveManualTaxable && <div className="payslip-row deduction">
-                            <span>− Flat-rate expenses</span>
-                            <span>−{fmtGBP(liveFlatExp)}</span>
-                          </div>}
-                          <div className="payslip-row subtotal">
-                            <span>= Taxable Pay</span>
-                            <span style={{ color: '#22d3ee', fontWeight: 700 }}>{fmtGBP(taxable)}</span>
-                          </div>
-                          {liveManualTaxable > 0 && liveSalSac > 0 && liveFlatExp > 0 && Math.abs(taxable - (liveSalary - liveSalSac - liveFlatExp)) > 50 && (
-                            <div className="payslip-row note">
-                              <span>ℹ️ Manual taxable pay used — differs from calculated by {fmtGBP(Math.abs(taxable - (liveSalary - liveSalSac - liveFlatExp)))}</span>
-                            </div>
-                          )}
+                    <p className="payslip-panel-intro">
+                      Your MOD payslip shows both monthly and year-to-date (YTD) columns. Use the <strong>YTD totals</strong> from your final payslip of the tax year (March/April), or your P60. The gaps between Gross, NIable, and Taxable Pay are your pre-tax deductions.
+                    </p>
+                    <div className="deductions-grid">
+                      <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                        <div className="label-row">
+                          <label htmlFor="manualTaxablePay" className="sub-label">Easiest: Actual Taxable Pay <span className="label-hint">(annual YTD from payslip or P60)</span></label>
+                          <InfoHint>Just copy the YTD “Taxable Pay” figure from your end-of-year payslip or P60. This is the quickest way — it overrides the two optional fields below.</InfoHint>
+                        </div>
+                        <div className="input-wrap">
+                          <span className="input-prefix">£</span>
+                          <input id="manualTaxablePay" name="manualTaxablePay" type="number" placeholder="0" min="0" value={form.manualTaxablePay} onChange={handleChange} />
+                          <span className="input-suffix">/yr</span>
                         </div>
                       </div>
-                    );
-                  })()}
-                </div>
-              )}
-            </div>
+                      <div className="deductions-divider">— or break it down manually —</div>
+                      <div className="form-group">
+                        <div className="label-row">
+                          <label htmlFor="salSacrifice" className="sub-label">Salary Sacrifice / Pension Deductions <span className="label-hint">(annual YTD)</span></label>
+                          <InfoHint>
+                            Annual total: YTD Gross Pay − YTD NIable Pay from your payslip. Includes: Added Pension contributions, SAYE, Cycle to Work, childcare vouchers.
+                            {liveSalary > 0 && !form.salSacrifice && <><br/><strong style={{color:'#f59e0b'}}>Tip:</strong> Your gross is {fmtGBP(liveSalary)}. Find your YTD "NIable Pay" — the difference is this field.</>}
+                          </InfoHint>
+                        </div>
+                        <div className="input-wrap">
+                          <span className="input-prefix">£</span>
+                          <input id="salSacrifice" name="salSacrifice" type="number" placeholder="0" min="0" value={form.salSacrifice} onChange={handleChange} />
+                          <span className="input-suffix">/yr</span>
+                        </div>
+                      </div>
+                      <div className="form-group">
+                        <div className="label-row">
+                          <label htmlFor="flatRateExpenses" className="sub-label">Flat-Rate Employment Expenses <span className="label-hint">(annual)</span></label>
+                          <InfoHint>Annual total of HMRC-approved deductions: uniform/laundry allowance (£91.63/yr standard for Armed Forces), professional subscriptions, tools. These reduce taxable pay but NOT NIable pay.</InfoHint>
+                        </div>
+                        <div className="input-wrap">
+                          <span className="input-prefix">£</span>
+                          <input id="flatRateExpenses" name="flatRateExpenses" type="number" placeholder="0" min="0" value={form.flatRateExpenses} onChange={handleChange} />
+                          <span className="input-suffix">/yr</span>
+                        </div>
+                      </div>
+                    </div>
 
-            <div className="form-group">
-              <div className="label-row">
-                <label htmlFor="leaveAge">Expected Age When Leaving MOD <span className="label-hint">(for AFPS 15)</span></label>
-                <InfoHint>Leave blank to assume you serve until retirement. AFPS 15 contributions stop at this age.</InfoHint>
-              </div>
-              <input id="leaveAge" className="bare-input" name="leaveAge" type="number" placeholder={form.retirementAge || '60'} min="18" max="75" value={form.leaveAge} onChange={handleChange} />
-            </div>
-            <div className="form-group">
-              <div className="label-row">
-                <label>AFPS 15 Payment Method</label>
-                <InfoHint>
-                  {form.apPaymentType === 'periodic'
-                    ? 'Monthly salary sacrifice — most common. Costs ~37% more per £100 block than single premium due to time-value loading.'
-                    : 'One-off lump sum per year. Cheaper per £100 block but requires a larger upfront payment.'}
-                </InfoHint>
-              </div>
-              <div className="preset-buttons">
-                <button type="button" className={`preset-btn ${form.apPaymentType === 'periodic' ? 'active' : ''}`}
-                  onClick={() => setForm(prev => ({ ...prev, apPaymentType: 'periodic' }))}>
-                  📅 Monthly (periodic)
-                </button>
-                <button type="button" className={`preset-btn ${form.apPaymentType === 'single' ? 'active' : ''}`}
-                  onClick={() => setForm(prev => ({ ...prev, apPaymentType: 'single' }))}>
-                  💵 Single Premium (lump sum)
-                </button>
-              </div>
-            </div>
-            <div className="form-group">
-              <div className="label-row">
-                <label htmlFor="apCostPer100">AFPS 15 Cost per £100/yr Added Pension <span className="label-hint">(from your factor table — optional)</span></label>
-                <InfoHint>
-                  The cost to buy £100/yr of added pension for life ({form.apPaymentType === 'periodic' ? 'monthly periodic rate' : 'single premium rate'}).
-                  Leave blank to use this age-based estimate. If you have a quote, enter the exact figure here — it overrides the estimate.
-                </InfoHint>
-              </div>
-              <div className="input-wrap">
-                <span className="input-prefix">£</span>
-                <input id="apCostPer100" name="apCostPer100" type="number" placeholder={form.apPaymentType === 'periodic' ? Math.round(liveEstCost100 * 1.37) : liveEstCost100} min="500" max="20000" step="1" value={form.apCostPer100} onChange={handleChange} />
-              </div>
-              {liveAge > 0 && (
-                <div className="ap-factor-table">
-                  <p className="ap-factor-title">Approximate factors by age ({form.apPaymentType === 'periodic' ? 'periodic ≈ single × 1.37' : 'single premium'})</p>
-                  <div className="ap-factor-grid">
-                    {[[20,820],[25,1010],[30,1240],[35,1530],[40,1890],[45,2370],[50,3020],[55,3960],[60,5190],[65,6820]].map(([a, cost]) => {
-                      const displayCost = form.apPaymentType === 'periodic' ? Math.round(cost * 1.37) : cost;
+                    {/* Live payslip reconciliation */}
+                    {liveSalary > 0 && (liveSalSac > 0 || liveFlatExp > 0 || liveManualTaxable > 0) && (() => {
+                      const niable = liveSalary - liveSalSac;
+                      const taxable = liveManualTaxable > 0 ? liveManualTaxable : liveSalary - liveSalSac - liveFlatExp;
                       return (
-                        <div key={a} className={`ap-factor-cell ${liveAge === a ? 'highlight' : liveAge > a - 3 && liveAge <= a + 2 ? 'nearby' : ''}`}>
-                          <span className="ap-factor-age">Age {a}</span>
-                          <span className="ap-factor-cost">{fmtGBP(displayCost, 0)}</span>
+                        <div className="payslip-reconciliation">
+                          <p className="payslip-title">📋 Annual Payslip Reconciliation</p>
+                          <div className="payslip-rows">
+                            <div className="payslip-row">
+                              <span>Gross Pay</span>
+                              <span>{fmtGBP(liveSalary)}</span>
+                            </div>
+                            {liveSalSac > 0 && <div className="payslip-row deduction">
+                              <span>− Salary sacrifice / pension</span>
+                              <span>−{fmtGBP(liveSalSac)}</span>
+                            </div>}
+                            <div className="payslip-row subtotal">
+                              <span>= NIable Pay</span>
+                              <span>{fmtGBP(niable)}</span>
+                            </div>
+                            {liveFlatExp > 0 && !liveManualTaxable && <div className="payslip-row deduction">
+                              <span>− Flat-rate expenses</span>
+                              <span>−{fmtGBP(liveFlatExp)}</span>
+                            </div>}
+                            <div className="payslip-row subtotal">
+                              <span>= Taxable Pay</span>
+                              <span style={{ color: '#22d3ee', fontWeight: 700 }}>{fmtGBP(taxable)}</span>
+                            </div>
+                            {liveManualTaxable > 0 && liveSalSac > 0 && liveFlatExp > 0 && Math.abs(taxable - (liveSalary - liveSalSac - liveFlatExp)) > 50 && (
+                              <div className="payslip-row note">
+                                <span>ℹ️ Manual taxable pay used — differs from calculated by {fmtGBP(Math.abs(taxable - (liveSalary - liveSalSac - liveFlatExp)))}</span>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       );
-                    })}
+                    })()}
                   </div>
-                  <p className="ap-factor-note">Approximate — actual values from your booklet/quote may differ. Your estimate: <strong style={{color:'#22d3ee'}}>{fmtGBP(form.apPaymentType === 'periodic' ? Math.round(liveEstCost100 * 1.37) : liveEstCost100, 0)}</strong></p>
+                )}
+              </div>
+            )}
+
+            {form.isServing && (
+              <div className="form-group">
+                <div className="label-row">
+                  <label htmlFor="leaveAge">Expected Age When Leaving MOD <span className="label-hint">(for AFPS 15)</span></label>
+                  <InfoHint>Leave blank to assume you serve until retirement. AFPS 15 contributions stop at this age.</InfoHint>
                 </div>
-              )}
-            </div>
+                <input id="leaveAge" className="bare-input" name="leaveAge" type="number" placeholder={form.retirementAge || '60'} min="18" max="75" value={form.leaveAge} onChange={handleChange} />
+              </div>
+            )}
+            {form.isServing && (
+              <div className="form-group">
+                <div className="label-row">
+                  <label>AFPS 15 Payment Method</label>
+                  <InfoHint>
+                    {form.apPaymentType === 'periodic'
+                      ? 'Monthly salary sacrifice — most common. Costs ~37% more per £100 block than single premium due to time-value loading.'
+                      : 'One-off lump sum per year. Cheaper per £100 block but requires a larger upfront payment.'}
+                  </InfoHint>
+                </div>
+                <div className="preset-buttons">
+                  <button type="button" className={`preset-btn ${form.apPaymentType === 'periodic' ? 'active' : ''}`}
+                    onClick={() => setForm(prev => ({ ...prev, apPaymentType: 'periodic' }))}>
+                    📅 Monthly (periodic)
+                  </button>
+                  <button type="button" className={`preset-btn ${form.apPaymentType === 'single' ? 'active' : ''}`}
+                    onClick={() => setForm(prev => ({ ...prev, apPaymentType: 'single' }))}>
+                    💵 Single Premium (lump sum)
+                  </button>
+                </div>
+              </div>
+            )}
+            {form.isServing && (
+              <div className="form-group">
+                <div className="label-row">
+                  <label htmlFor="apCostPer100">AFPS 15 Cost per £100/yr Added Pension <span className="label-hint">(from your factor table — optional)</span></label>
+                  <InfoHint>
+                    The cost to buy £100/yr of added pension for life ({form.apPaymentType === 'periodic' ? 'monthly periodic rate' : 'single premium rate'}).
+                    Leave blank to use this age-based estimate. If you have a quote, enter the exact figure here — it overrides the estimate.
+                  </InfoHint>
+                </div>
+                <div className="input-wrap">
+                  <span className="input-prefix">£</span>
+                  <input id="apCostPer100" name="apCostPer100" type="number" placeholder={form.apPaymentType === 'periodic' ? Math.round(liveEstCost100 * 1.37) : liveEstCost100} min="500" max="20000" step="1" value={form.apCostPer100} onChange={handleChange} />
+                </div>
+                {liveAge > 0 && (
+                  <div className="ap-factor-table">
+                    <p className="ap-factor-title">Approximate factors by age ({form.apPaymentType === 'periodic' ? 'periodic ≈ single × 1.37' : 'single premium'})</p>
+                    <div className="ap-factor-grid">
+                      {[[20,820],[25,1010],[30,1240],[35,1530],[40,1890],[45,2370],[50,3020],[55,3960],[60,5190],[65,6820]].map(([a, cost]) => {
+                        const displayCost = form.apPaymentType === 'periodic' ? Math.round(cost * 1.37) : cost;
+                        return (
+                          <div key={a} className={`ap-factor-cell ${liveAge === a ? 'highlight' : liveAge > a - 3 && liveAge <= a + 2 ? 'nearby' : ''}`}>
+                            <span className="ap-factor-age">Age {a}</span>
+                            <span className="ap-factor-cost">{fmtGBP(displayCost, 0)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <p className="ap-factor-note">Approximate — actual values from your booklet/quote may differ. Your estimate: <strong style={{color:'#22d3ee'}}>{fmtGBP(form.apPaymentType === 'periodic' ? Math.round(liveEstCost100 * 1.37) : liveEstCost100, 0)}</strong></p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <p className="form-section-label">Current Pots &amp; Pension Statement <span className="label-hint">(optional — needed for full retirement picture)</span></p>
@@ -2158,7 +2008,7 @@ function App() {
                 <div className="live-limits">
                   {liveContrib > 20000 && <span className="limit-warn">⚠️ ISA: exceeds £20,000/yr allowance</span>}
                   {liveSippNetLimit > 0 && liveContrib > liveSippNetLimit && <span className="limit-warn">⚠️ SIPP: exceeds your Annual Allowance net limit of {fmtGBP(liveSippNetLimit)}</span>}
-                  {liveContrib > liveApMaxContrib && <span className="limit-warn">⚠️ AFPS 15: exceeds max contribution of ~{fmtGBP(liveApMaxContrib)}/yr for your age</span>}
+                  {form.isServing && liveContrib > liveApMaxContrib && <span className="limit-warn">⚠️ AFPS 15: exceeds max contribution of ~{fmtGBP(liveApMaxContrib)}/yr for your age</span>}
                 </div>
               )}
             </div>
@@ -2406,7 +2256,7 @@ function App() {
           <TotalWealthChart results={results} form={form} />
 
           {/* Total Retirement Picture */}
-          <RetirementPictureCard results={results} />
+          <RetirementPictureCard results={results} isServing={form.isServing} />
 
           {/* Mortgage vs Invest Analysis */}
           {results.mortgageAnalysis && (
