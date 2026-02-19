@@ -260,8 +260,6 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
   const totalPensionAcquired = Math.min(totalPensionRaw, AP_LIFETIME_MAX);
   const willHitCap = totalPensionRaw > AP_LIFETIME_MAX;
   const yearsToHitCap = pensionPerYear > 0 ? Math.ceil(AP_LIFETIME_MAX / pensionPerYear) : leaveYears;
-  const blocksTotal = blocksPerYear * leaveYears;
-  const blocksRemaining = Math.max(0, AP_MAX_MULTIPLES - blocksTotal);
   const apMaxAnnualByLifetime = leaveYears > 0
     ? Math.round((AP_LIFETIME_MAX / 100) * costPer100actual / leaveYears)
     : Math.round(AP_MAX_MULTIPLES * costPer100actual);
@@ -512,6 +510,8 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
     mortgageAnalysis,
     cashAnalysis: hasCash ? { cashReserve, monthlyExpenses, emergencyTarget, emergencyShortfall, emergencyOk } : null,
     netWorth: { isaOptPot, sippOptPot, apOptPot, cashAtRetirement, propertyEquityAtRetirement, liquidWealth, totalNetWorth },
+    // Expose helpful limits for UI actions (e.g., maximise tax savings)
+    sippNetLimit, apMaxContrib,
   };
 }
 
@@ -1478,6 +1478,8 @@ function App() {
     }, 100);
   };
 
+  // Max-tax helper removed per request
+
   // Live tax preview — use adjusted salary if payslip details provided
   const liveSalary  = parseFloat(form.salary) || 0;
   const liveTaxInfo = parseTaxCode(form.taxCode);
@@ -1632,7 +1634,7 @@ function App() {
               <div className="input-wrap">
                 <span className="input-prefix">£</span>
                 <input id="salary" name="salary" type="number" placeholder="35000" value={form.salary} onChange={handleChange} required />
-              </div>
+            </div>
             </div>
             <div className="form-group">
               <label htmlFor="taxCode">Tax Code <span className="label-hint">(e.g. 1257L, BR, D0, K100)</span></label>
