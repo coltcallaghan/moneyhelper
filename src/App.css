@@ -1,0 +1,1777 @@
+/* ── Section Toggle Button (Property/Cash) ─────────────────────────────── */
+.section-toggle-btn.property-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  background: #223045;
+  color: var(--accent);
+  border: 1.5px solid var(--accent);
+  border-radius: 8px;
+  font-size: 1.08rem;
+  font-weight: 600;
+  padding: 0.55rem 1.2rem;
+  margin: 1.2rem 0 1.2rem 0;
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s, border 0.18s;
+  box-shadow: 0 2px 8px rgba(34,211,238,0.07);
+}
+.section-toggle-btn.property-toggle.open {
+  background: var(--accent);
+  color: #0f172a;
+  border-color: var(--accent);
+}
+.section-toggle-btn .toggle-arrow {
+  font-size: 1.15em;
+  margin-right: 0.2rem;
+}
+.section-toggle-btn .toggle-icon {
+  font-size: 1.25em;
+  margin-right: 0.2rem;
+}
+.section-toggle-btn .toggle-label {
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+/* ── Save/Compare Bar ─────────────────────────────────────────────── */
+.save-compare-bar {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  margin: 1.5rem 0 1.5rem 0;
+  padding: 1rem 1.5rem;
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.btn-save-calc {
+  background: var(--accent);
+  color: #0f172a;
+  font-weight: 600;
+  border: none;
+  border-radius: 6px;
+  padding: 0.5rem 1.2rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.btn-save-calc:disabled {
+  background: #334155;
+  color: #64748b;
+  cursor: not-allowed;
+}
+.saved-list {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.saved-item {
+  display: flex;
+  align-items: center;
+  background: #223045;
+  border-radius: 6px;
+  margin-right: 0.3rem;
+  padding: 0.2rem 0.7rem 0.2rem 0.5rem;
+  font-size: 0.97rem;
+  color: var(--muted);
+  border: 1px solid #334155;
+}
+.saved-item.selected {
+  background: var(--accent);
+  color: #0f172a;
+  font-weight: 700;
+}
+.saved-item button {
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  margin-right: 0.2rem;
+}
+.saved-item .delete-btn {
+  color: #f87171;
+  margin-left: 0.2rem;
+  font-size: 1.1em;
+}
+.compare-card {
+  background: #223045;
+  border: 2px solid var(--accent);
+  border-radius: var(--radius);
+  margin: 1.2rem 0 1.5rem 0;
+  padding: 1.2rem 1.5rem;
+  color: var(--text);
+  box-shadow: 0 2px 12px rgba(34,211,238,0.08);
+  max-width: 600px;
+}
+.compare-header {
+  font-weight: 700;
+  font-size: 1.08rem;
+  margin-bottom: 0.7rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.compare-close {
+  background: none;
+  border: none;
+  color: #f87171;
+  font-size: 1.2em;
+  cursor: pointer;
+  margin-left: 1rem;
+}
+.compare-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem 1.5rem;
+  font-size: 1.01rem;
+}
+/* ── Reset & Base ─────────────────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg:       #0f172a;
+  --bg-card:  #1e293b;
+  --border:   #334155;
+  --text:     #f1f5f9;
+  --muted:    #94a3b8;
+  --dim:      #64748b;
+  --accent:   #22d3ee;
+  --green:    #10b981;
+  --radius:   12px;
+  --shadow:   0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Layout ───────────────────────────────────────────────────────────────── */
+.app {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 2.5rem 1.25rem 5rem;
+}
+
+/* ── Header ───────────────────────────────────────────────────────────────── */
+.app-header {
+  text-align: center;
+  margin-bottom: 2.5rem;
+}
+
+.header-badge {
+  display: inline-block;
+  background: rgba(34, 211, 238, 0.08);
+  border: 1px solid rgba(34, 211, 238, 0.25);
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  padding: 0.35rem 0.9rem;
+  border-radius: 100px;
+  margin-bottom: 1rem;
+}
+
+.app-header h1 {
+  font-size: clamp(1.65rem, 4vw, 2.5rem);
+  font-weight: 800;
+  line-height: 1.15;
+  margin-bottom: 0.75rem;
+  background: linear-gradient(135deg, #f1f5f9 20%, var(--accent) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.app-header h1 {
+  font-size: 2.1rem;
+  font-weight: 800;
+  margin-bottom: 0.7rem;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.disclaimer-box {
+  display: flex;
+  align-items: flex-start;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 8px;
+  padding: 0.7rem 1rem;
+  margin-top: 1.1rem;
+  font-size: 0.98rem;
+}
+.disclaimer-icon {
+  font-size: 1.25rem;
+  margin-right: 0.7rem;
+  color: #fbbf24;
+  flex-shrink: 0;
+}
+.disclaimer-text {
+  color: #fbbf24;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+/* ── Form Card ────────────────────────────────────────────────────────────── */
+.form-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2rem;
+  margin-bottom: 2rem;
+  box-shadow: var(--shadow);
+}
+
+.form-section-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--dim);
+  margin-bottom: 1.25rem;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.form-group label {
+  font-size: 0.84rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-prefix {
+  position: absolute;
+  left: 0.8rem;
+  color: var(--dim);
+  font-size: 0.9rem;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.input-wrap input,
+.bare-input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 0.95rem;
+  padding: 0.65rem 0.85rem;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  -moz-appearance: textfield;
+}
+
+.input-wrap input {
+  padding-left: 1.7rem;
+}
+
+.input-suffix {
+  position: absolute;
+  right: 0.8rem;
+  color: var(--dim);
+  font-size: 0.85rem;
+  font-weight: 500;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.input-wrap input:has(~ .input-suffix) {
+  padding-right: 2.8rem;
+}
+
+.input-wrap input:focus,
+.bare-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.12);
+}
+
+.input-wrap input::-webkit-outer-spin-button,
+.input-wrap input::-webkit-inner-spin-button,
+.bare-input::-webkit-outer-spin-button,
+.bare-input::-webkit-inner-spin-button {
+  opacity: 0.4;
+}
+
+.input-hint {
+  font-size: 0.73rem;
+  color: var(--dim);
+  line-height: 1.4;
+}
+
+/* ── Live Tax Info Bar ────────────────────────────────────────────────────── */
+.tax-info-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1.25rem;
+  background: rgba(34, 211, 238, 0.05);
+  border: 1px solid rgba(34, 211, 238, 0.15);
+  border-radius: 8px;
+  padding: 0.75rem 1.1rem;
+  margin-bottom: 1.5rem;
+  font-size: 0.83rem;
+  color: var(--muted);
+}
+
+.tax-info-bar strong {
+  color: var(--accent);
+}
+
+.tax-band-label {
+  margin-left: auto;
+  color: var(--dim);
+  font-style: italic;
+  font-size: 0.78rem;
+}
+
+/* ── Calculate Button ─────────────────────────────────────────────────────── */
+.btn-calculate {
+  width: 100%;
+  padding: 0.9rem;
+  background: linear-gradient(135deg, #0ea5e9, var(--accent));
+  color: #0f172a;
+  font-weight: 700;
+  font-size: 1rem;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+  transition: opacity 0.15s, transform 0.1s;
+}
+
+.btn-calculate:hover  { opacity: 0.88; }
+.btn-calculate:active { transform: scale(0.99); }
+
+/* ── Results Section ──────────────────────────────────────────────────────── */
+.results-section {
+  animation: fadeUp 0.35s ease;
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Recommendation Card ──────────────────────────────────────────────────── */
+.recommendation-card {
+  background: linear-gradient(
+    135deg,
+    rgba(16, 185, 129, 0.12) 0%,
+    rgba(34, 211, 238, 0.07) 100%
+  );
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  border-radius: var(--radius);
+  padding: 1.75rem;
+  margin-bottom: 2rem;
+}
+
+.rec-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+.rec-badge {
+  background: var(--green);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 0.25rem 0.65rem;
+  border-radius: 100px;
+}
+
+.rec-header h2 {
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+
+.rec-reason {
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.7;
+  margin-bottom: 1.1rem;
+}
+
+.rec-stats {
+  display: flex;
+  gap: 2.5rem;
+  flex-wrap: wrap;
+}
+
+.rec-stat-label {
+  display: block;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+  margin-bottom: 0.2rem;
+}
+
+.rec-stat-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.rec-efficiency {
+  color: var(--green);
+}
+
+/* ── Action Plan Card ─────────────────────────────────────────────────────── */
+.action-plan-card {
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.07) 0%, rgba(16, 185, 129, 0.05) 100%);
+  border: 1px solid rgba(34, 211, 238, 0.25);
+  border-radius: var(--radius);
+  padding: 1.75rem;
+  margin-bottom: 2rem;
+}
+
+.ap-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  margin-bottom: 1.25rem;
+}
+
+.ap-header-icon {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.ap-title {
+  font-size: 1.3rem;
+  font-weight: 800;
+  margin-bottom: 0.15rem;
+}
+
+.ap-subtitle {
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.ap-left-note {
+  background: rgba(251, 146, 60, 0.1);
+  border: 1px solid rgba(251, 146, 60, 0.3);
+  border-radius: 8px;
+  padding: 0.65rem 0.9rem;
+  color: #fb923c;
+  font-size: 0.82rem;
+  margin-bottom: 1.25rem;
+}
+
+.ap-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.ap-step {
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--step-color, var(--accent));
+  border-radius: 10px;
+  padding: 1.1rem 1.25rem;
+}
+
+.ap-step-number {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--dim);
+  margin-bottom: 0.5rem;
+}
+
+.ap-step-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.85rem;
+}
+
+.ap-step-icon {
+  font-size: 1.35rem;
+}
+
+.ap-step-vehicle {
+  font-weight: 700;
+  font-size: 1.05rem;
+  flex: 1;
+}
+
+.ap-step-amount {
+  font-weight: 800;
+  font-size: 1.25rem;
+  white-space: nowrap;
+}
+
+.ap-step-body {
+  padding-left: 0.15rem;
+}
+
+.ap-step-money {
+  background: rgba(15, 23, 42, 0.4);
+  border-radius: 8px;
+  padding: 0.6rem 0.85rem;
+  margin-bottom: 0.75rem;
+}
+
+.ap-step-money-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.2rem 0;
+}
+
+.ap-money-label {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.ap-money-value {
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.ap-net-row {
+  border-top: 1px solid var(--border);
+  margin-top: 0.3rem;
+  padding-top: 0.4rem;
+}
+
+.ap-step-outcome {
+  color: var(--accent);
+  font-size: 0.88rem;
+  font-weight: 600;
+  margin-bottom: 0.4rem;
+  line-height: 1.5;
+}
+
+.ap-step-reason {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.65;
+  margin-bottom: 0.3rem;
+}
+
+.ap-step-note {
+  font-size: 0.8rem;
+  color: #f59e0b;
+  line-height: 1.55;
+  margin-top: 0.35rem;
+}
+
+.ap-summary {
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+}
+
+.ap-summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.3rem 0;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.ap-summary-value {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.ap-summary-saving {
+  border-top: 1px solid var(--border);
+  margin-top: 0.25rem;
+  padding-top: 0.45rem;
+}
+
+.ap-summary-note {
+  color: var(--accent);
+  font-size: 0.82rem;
+  line-height: 1.6;
+  margin-top: 0.75rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--border);
+}
+
+.ap-summary-title {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--dim);
+  margin-bottom: 0.5rem;
+}
+
+.ap-phase {
+  margin-bottom: 1.25rem;
+}
+
+.ap-phase-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  margin-bottom: 0.85rem;
+  padding: 0.75rem 0.9rem;
+  background: rgba(34, 211, 238, 0.06);
+  border: 1px solid rgba(34, 211, 238, 0.15);
+  border-radius: 8px;
+}
+
+.ap-phase-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.ap-phase-label {
+  font-weight: 700;
+  font-size: 1.05rem;
+  margin-bottom: 0.1rem;
+}
+
+.ap-phase-subtitle {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.ap-phase-totals {
+  background: rgba(15, 23, 42, 0.35);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.65rem 0.9rem;
+  margin-top: 0.75rem;
+}
+
+.ap-phase-transition {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.85rem 0;
+  color: var(--accent);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.ap-transition-arrow {
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
+@media (max-width: 600px) {
+  .ap-step-header {
+    flex-wrap: wrap;
+  }
+  .ap-step-amount {
+    width: 100%;
+    text-align: right;
+  }
+}
+
+/* ── Full Comparison Grid ─────────────────────────────────────────────────── */
+.results-heading {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--dim);
+  margin-bottom: 1rem;
+}
+
+.results-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+/* ── Result Card ──────────────────────────────────────────────────────────── */
+.result-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--card-color, #3b82f6);
+  border-radius: var(--radius);
+  padding: 1.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.result-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+}
+
+.result-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.result-icon { font-size: 1.6rem; }
+.result-rank { font-size: 1.3rem; }
+
+.result-card-name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.result-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.result-stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.stat-value {
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.stat-value.positive { color: var(--green); }
+
+/* ── Efficiency Bar ───────────────────────────────────────────────────────── */
+.efficiency-section {
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+}
+
+.efficiency-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-bottom: 0.45rem;
+}
+
+.efficiency-score {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.efficiency-bar {
+  height: 5px;
+  background: var(--border);
+  border-radius: 100px;
+  overflow: hidden;
+}
+
+.efficiency-bar-fill {
+  height: 100%;
+  border-radius: 100px;
+  transition: width 0.7s ease;
+}
+
+/* ── Highlights List ──────────────────────────────────────────────────────── */
+.highlights-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.highlights-list li {
+  font-size: 0.78rem;
+  color: var(--muted);
+  display: flex;
+  gap: 0.45rem;
+  align-items: flex-start;
+  line-height: 1.45;
+}
+
+.highlights-list li::before {
+  content: '→';
+  color: var(--card-color, #3b82f6);
+  flex-shrink: 0;
+  font-weight: 700;
+  margin-top: 0.05rem;
+}
+
+/* ── Pros / Cons ──────────────────────────────────────────────────────────── */
+.result-footer {
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.result-pros { font-size: 0.76rem; color: #4ade80; line-height: 1.4; }
+.result-cons { font-size: 0.76rem; color: #fbbf24; line-height: 1.4; }
+
+/* ── Disclaimer ───────────────────────────────────────────────────────────── */
+.disclaimer {
+  font-size: 0.73rem;
+  color: var(--dim);
+  text-align: center;
+  line-height: 1.65;
+  border-top: 1px solid var(--border);
+  padding-top: 1.5rem;
+}
+
+/* ── Tax Code hint ────────────────────────────────────────────────────────── */
+.label-hint {
+  font-size: 0.72rem;
+  color: var(--dim);
+  font-weight: 400;
+}
+.tax-code-note {
+  color: var(--accent) !important;
+}
+.tax-warning {
+  color: #fb923c;
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+/* ── Return presets ───────────────────────────────────────────────────────── */
+.preset-buttons {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  flex-wrap: wrap;
+}
+.preset-btn {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 6px;
+  padding: 0.28rem 0.65rem;
+  font-size: 0.73rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.preset-btn:hover { border-color: var(--accent); color: var(--accent); }
+.preset-btn.active {
+  background: rgba(34, 211, 238, 0.12);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ── Payslip Details Toggle ───────────────────────────────────────────────── */
+.payslip-toggle-wrapper {
+  margin-bottom: 0.25rem;
+}
+.payslip-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  background: rgba(34, 211, 238, 0.04);
+  border: 1px dashed rgba(34, 211, 238, 0.25);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 0.6rem 1rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: left;
+}
+.payslip-toggle-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(34, 211, 238, 0.08);
+}
+.payslip-toggle-btn.active {
+  border-style: solid;
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(34, 211, 238, 0.08);
+}
+.payslip-toggle-icon {
+  font-size: 0.75rem;
+  opacity: 0.7;
+}
+
+.payslip-details-panel {
+  margin-top: 0.75rem;
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem 1.2rem;
+}
+.payslip-annual-callout {
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 8px;
+  padding: 0.6rem 0.9rem;
+  font-size: 0.8rem;
+  color: #fbbf24;
+  line-height: 1.5;
+  margin-bottom: 0.75rem;
+}
+.payslip-panel-intro {
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.5;
+  margin-bottom: 1rem;
+}
+
+/* Deductions grid */
+.deductions-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1rem;
+}
+.deductions-grid .form-group {
+  margin-bottom: 0;
+}
+.sub-label {
+  font-size: 0.78rem;
+  color: #94a3b8;
+  font-weight: 500;
+  display: block;
+  margin-bottom: 0.3rem;
+}
+
+/* Payslip reconciliation */
+.payslip-reconciliation {
+  margin-top: 0.75rem;
+  background: rgba(34, 211, 238, 0.06);
+  border: 1px solid rgba(34, 211, 238, 0.15);
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+}
+.payslip-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #22d3ee;
+  margin-bottom: 0.5rem;
+}
+.payslip-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.payslip-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: #cbd5e1;
+  padding: 0.15rem 0;
+}
+.payslip-row.deduction {
+  color: #f87171;
+}
+.payslip-row.subtotal {
+  font-weight: 700;
+  color: #e2e8f0;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  padding-top: 0.3rem;
+  margin-top: 0.15rem;
+}
+.payslip-row.note {
+  color: #f59e0b;
+  font-size: 0.75rem;
+  margin-top: 0.25rem;
+}
+
+@media (max-width: 768px) {
+  .deductions-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Tax Summary Card ─────────────────────────────────────────────────────── */
+.tax-summary-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.tax-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 1rem;
+}
+.tax-summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.ts-label {
+  font-size: 0.72rem;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.ts-value {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.ts-value.negative { color: #f87171; }
+.ts-value.positive { color: #4ade80; }
+.ts-sub {
+  font-size: 0.71rem;
+  color: var(--dim);
+}
+.tax-code-info {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/* ── FIRE Card ────────────────────────────────────────────────────────────── */
+.fire-card {
+  background: linear-gradient(135deg, rgba(251, 146, 60, 0.08), rgba(239, 68, 68, 0.08));
+  border: 1px solid rgba(251, 146, 60, 0.3);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.fire-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+.fire-emoji { font-size: 2.5rem; line-height: 1; }
+.fire-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #fb923c;
+  margin-bottom: 0.25rem;
+}
+.fire-number {
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: #fb923c;
+  letter-spacing: -0.02em;
+}
+.fire-sub {
+  font-size: 0.82rem;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+/* ── Results Heading ─────────────────────────────────────────────────────── */
+.results-heading {
+  font-size: 0.85rem;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 1rem;
+  font-weight: 600;
+}
+
+/* ── Income Breakdown (At Retirement) ────────────────────────────────────── */
+.income-breakdown {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--card-color, #3b82f6);
+  border-radius: 8px;
+  padding: 0.75rem 0.9rem;
+  margin: 0.75rem 0;
+}
+.income-breakdown-title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--card-color, #3b82f6);
+  margin-bottom: 0.55rem;
+}
+.income-breakdown-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.32rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+.income-breakdown-row:last-child { border-bottom: none; }
+.ib-label {
+  font-size: 0.75rem;
+  color: var(--muted);
+  flex: 1;
+  padding-top: 0.1rem;
+}
+.ib-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.1rem;
+}
+.ib-value {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #4ade80;
+  white-space: nowrap;
+}
+.ib-note {
+  font-size: 0.67rem;
+  color: var(--dim);
+  text-align: right;
+}
+
+/* ── Limit Warning Banner (inside result card) ────────────────────────────── */
+.limit-warning-banner {
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  border-radius: 7px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.76rem;
+  color: #fbbf24;
+  margin-bottom: 0.75rem;
+  line-height: 1.5;
+}
+
+/* ── Live Limit Hints (below contribution input) ──────────────────────────── */
+.live-limits {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin-top: 0.4rem;
+}
+.limit-warn {
+  font-size: 0.73rem;
+  color: #fb923c;
+  display: block;
+  line-height: 1.4;
+}
+
+/* ── Mix Card ─────────────────────────────────────────────────────────────── */
+.mix-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-top: 3px solid #a78bfa;
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.mix-header {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+.mix-icon { font-size: 1.7rem; flex-shrink: 0; }
+.mix-header-text { flex: 1; min-width: 0; }
+.mix-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 0.15rem;
+}
+.mix-subtitle { font-size: 0.75rem; color: var(--dim); }
+.mix-best-pill {
+  background: rgba(167, 139, 250, 0.12);
+  border: 1px solid rgba(167, 139, 250, 0.4);
+  color: #a78bfa;
+  border-radius: 100px;
+  padding: 0.3rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.mix-advice {
+  font-size: 0.83rem;
+  color: var(--muted);
+  line-height: 1.6;
+  margin-bottom: 1.25rem;
+  padding: 0.85rem 1rem;
+  background: rgba(167, 139, 250, 0.06);
+  border-left: 3px solid #a78bfa;
+  border-radius: 0 6px 6px 0;
+}
+.mix-table { width: 100%; border-collapse: collapse; }
+.mix-table-head,
+.mix-table-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1.1fr 1.2fr;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+}
+.mix-table-head {
+  font-size: 0.67rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--dim);
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  margin-bottom: 0.2rem;
+}
+.mix-table-row {
+  font-size: 0.82rem;
+  color: var(--muted);
+  border: 1px solid transparent;
+  transition: background 0.15s;
+}
+.mix-table-row:hover { background: rgba(255,255,255,0.02); }
+.mix-best-row {
+  background: rgba(167, 139, 250, 0.07);
+  border-color: rgba(167, 139, 250, 0.3);
+  color: var(--text);
+  font-weight: 500;
+}
+.mix-split-label { font-size: 0.82rem; }
+.mix-star { color: #a78bfa; }
+.mix-bar-col { text-align: right; }
+.mix-bar-cell { display: flex; align-items: center; }
+.mix-bar-bg {
+  width: 100%;
+  height: 6px;
+  background: var(--border);
+  border-radius: 100px;
+  overflow: hidden;
+}
+.mix-bar-fill {
+  height: 100%;
+  background: #a78bfa;
+  border-radius: 100px;
+  transition: width 0.6s ease;
+}
+.mix-footnote {
+  font-size: 0.7rem;
+  color: var(--dim);
+  line-height: 1.5;
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border);
+}
+
+/* ── AFPS 15 Factor Reference Table ─────────────────────────────────────── */
+.ap-factor-table {
+  margin-top: 0.75rem;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 10px;
+  padding: 0.85rem;
+}
+
+.ap-factor-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+  margin: 0 0 0.6rem;
+}
+
+.ap-factor-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.3rem;
+}
+
+.ap-factor-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.4rem 0.25rem;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid transparent;
+}
+
+.ap-factor-cell.nearby {
+  background: rgba(34, 211, 238, 0.05);
+  border-color: rgba(34, 211, 238, 0.15);
+}
+
+.ap-factor-cell.highlight {
+  background: rgba(34, 211, 238, 0.12);
+  border-color: rgba(34, 211, 238, 0.4);
+}
+
+.ap-factor-age {
+  font-size: 0.7rem;
+  color: #64748b;
+}
+
+.ap-factor-cost {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.ap-factor-cell.highlight .ap-factor-age,
+.ap-factor-cell.highlight .ap-factor-cost {
+  color: #22d3ee;
+}
+
+.ap-factor-note {
+  font-size: 0.72rem;
+  color: #475569;
+  margin: 0.5rem 0 0;
+  line-height: 1.5;
+}
+
+/* ── Responsive ───────────────────────────────────────────────────────────── */
+@media (max-width: 700px) {
+  .form-grid          { grid-template-columns: 1fr; }
+  .results-grid       { grid-template-columns: 1fr; }
+  .tax-band-label     { display: none; }
+  .tax-summary-grid   { grid-template-columns: repeat(2, 1fr); }
+  .mix-table-head     { display: none; }
+  .mix-table-row      { grid-template-columns: 1fr 1fr; row-gap: 0.15rem; }
+  .mix-bar-cell       { display: none; }
+  .mix-table-row > span:nth-child(2)::before { content: 'Cost: '; color: var(--dim); font-size: 0.67rem; display: block; }
+  .mix-table-row > span:nth-child(3)::before { content: 'Pot: ';  color: var(--dim); font-size: 0.67rem; display: block; }
+  .mix-table-row > span:nth-child(4)::before { content: 'Income: '; color: var(--dim); font-size: 0.67rem; display: block; }
+}
+@media (max-width: 480px) {
+  .tax-summary-grid   { grid-template-columns: 1fr; }
+}
+
+/* ── Retirement Picture Card ─────────────────────────────────────────────── */
+.retirement-picture-card {
+  background: linear-gradient(135deg, #0f2a1e 0%, #1a1f3a 100%);
+  border: 1px solid #10b981;
+  border-radius: 16px;
+  padding: 1.75rem;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 0 24px rgba(16, 185, 129, 0.12);
+}
+
+.rp-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.rp-header-icon {
+  font-size: 2.2rem;
+  line-height: 1;
+}
+
+.rp-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #f8fafc;
+  margin: 0 0 0.2rem;
+}
+
+.rp-subtitle {
+  font-size: 0.82rem;
+  color: #94a3b8;
+  margin: 0;
+}
+
+/* Income sources list */
+.rp-sources {
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 1rem;
+}
+
+.rp-source-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 0.85rem;
+  background: rgba(255,255,255,0.04);
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.rp-source-row:last-child {
+  border-bottom: none;
+}
+
+.rp-source-icon {
+  font-size: 1.1rem;
+  width: 1.4rem;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.rp-source-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.rp-source-label {
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: #e2e8f0;
+}
+
+.rp-source-note {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.rp-source-value {
+  font-size: 0.95rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.rp-total-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 0.85rem;
+  background: rgba(16, 185, 129, 0.12);
+  border-top: 1px solid rgba(16, 185, 129, 0.3);
+  margin-top: 2px;
+  border-radius: 0 0 8px 8px;
+}
+.rp-total-row.rp-total-full {
+  background: rgba(34, 211, 238, 0.12);
+  border-top-color: rgba(34, 211, 238, 0.3);
+}
+.rp-total-row.rp-total-full .rp-total-value {
+  color: #22d3ee;
+}
+
+.rp-total-label {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+
+.rp-total-value {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: #10b981;
+  font-variant-numeric: tabular-nums;
+}
+
+/* One-off lump sums */
+.rp-oneoffs {
+  margin-bottom: 1rem;
+}
+
+/* Phase labels for retirement picture */
+.rp-phase-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #22d3ee;
+  padding: 0 0.85rem;
+  margin-bottom: 0.15rem;
+}
+.rp-phase-note {
+  font-size: 0.73rem;
+  color: #64748b;
+  padding: 0 0.85rem;
+  margin-bottom: 0.5rem;
+}
+.rp-phase-full {
+  margin-top: 1rem;
+  border-top: 1px solid rgba(34, 211, 238, 0.15);
+  padding-top: 1rem;
+}
+.rp-source-new .rp-source-label {
+  color: #22d3ee;
+}
+.rp-source-continued {
+  opacity: 0.55;
+}
+
+/* Deductions divider */
+.deductions-divider {
+  grid-column: 1 / -1;
+  text-align: center;
+  font-size: 0.73rem;
+  color: #64748b;
+  padding: 0.25rem 0;
+  letter-spacing: 0.04em;
+}
+
+.rp-oneoffs-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #94a3b8;
+  margin: 0 0 0.5rem;
+}
+
+/* FIRE progress bar */
+.rp-fire-progress {
+  background: rgba(255,255,255,0.04);
+  border-radius: 10px;
+  padding: 1rem;
+  margin-top: 0.5rem;
+}
+
+.rp-fire-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.84rem;
+  color: #94a3b8;
+  margin-bottom: 0.6rem;
+}
+
+.rp-fire-pct {
+  font-weight: 700;
+  color: #f59e0b;
+}
+
+.rp-fire-pct.achieved {
+  color: #10b981;
+}
+
+.rp-fire-track {
+  height: 8px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 0.6rem;
+}
+
+.rp-fire-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #10b981, #34d399);
+  border-radius: 4px;
+  transition: width 0.6s ease;
+}
+
+.rp-fire-note {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.rp-empty {
+  color: #64748b;
+  font-style: italic;
+  font-size: 0.85rem;
+  padding: 0.5rem 0;
+}
+
+/* ── Retirement Timeline Chart ───────────────────────────────────────────── */
+.chart-card {
+  background: var(--bg-card);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  padding: 1.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.chart-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.chart-icon {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.chart-title {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 0.25rem;
+}
+
+.chart-subtitle {
+  font-size: 0.82rem;
+  color: #94a3b8;
+  margin: 0;
+}
+
+.chart-retire-callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  background: rgba(34, 211, 238, 0.07);
+  border: 1px solid rgba(34, 211, 238, 0.22);
+  border-radius: 10px;
+  padding: 0.85rem 1rem;
+  margin-top: 1rem;
+  font-size: 0.88rem;
+  color: #e2e8f0;
+  line-height: 1.55;
+}
+
+.chart-retire-callout.chart-retire-miss {
+  background: rgba(251, 146, 60, 0.07);
+  border-color: rgba(251, 146, 60, 0.22);
+}
+
+.chart-retire-emoji {
+  font-size: 1.3rem;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+
+.chart-retire-warning {
+  color: #fb923c;
+}
+
+.chart-footnote {
+  font-size: 0.74rem;
+  color: #475569;
+  margin: 0.9rem 0 0;
+  line-height: 1.55;
+}
+
+/* Chart coloured-text key */
+.chart-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.1rem;
+  margin: 0.9rem 0 0;
+}
+
+.chart-key-item {
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.chart-key-note {
+  font-weight: 400;
+  color: #64748b;
+  font-size: 0.78rem;
+}
+
+/* ── Mortgage Analysis Card ───────────────────────────────────────────────── */
+.mortgage-card,
+.cash-card,
+.networth-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  box-shadow: var(--shadow);
+}
+
+.mortgage-card {
+  border-left: 4px solid #f59e0b;
+}
+
+.cash-card {
+  border-left: 4px solid #6366f1;
+}
+
+.networth-card {
+  border-left: 4px solid #22d3ee;
+}
+
+.mortgage-verdict {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.mortgage-verdict-badge {
+  display: inline-block;
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.mortgage-verdict-badge.overpay {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.mortgage-verdict-badge.invest {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.mortgage-verdict-text {
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.55;
+  flex: 1;
+  min-width: 220px;
+}
+
+.mortgage-note {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  margin-top: 1rem;
+}
+
+.mortgage-note p {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+
+.mortgage-note strong {
+  color: var(--text);
+}
+
+.mortgage-note em {
+  color: var(--accent);
+  font-style: normal;
+  font-weight: 600;
+}
+
