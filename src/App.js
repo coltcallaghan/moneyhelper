@@ -96,6 +96,19 @@ function parseTaxCode(code) {
   return { pa: 12570, mode: 'normal', note: 'Unrecognised code — using standard £12,570 allowance' };
 }
 
+// Infer State Pension Age from current age (approximate mapping by birth year)
+function inferStatePensionAge(age) {
+  const currentYear = new Date().getFullYear();
+  const birthYear = currentYear - (age || 0);
+  // Approximate mapping:
+  // Born <= 1953  => SPA 65
+  // Born 1954-1959 => SPA 66
+  // Born >= 1960  => SPA 67
+  if (birthYear <= 1953) return 65;
+  if (birthYear <= 1959) return 66;
+  return 67;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // INCOME TAX  (England/Wales 2025/26)
 // Key: The personal allowance TAPERS between £100k–£125,140, creating a
@@ -1280,6 +1293,9 @@ function RetirementPictureCard({ results, isServing }) {
                 <span className="rp-source-value" style={{ color: s.color }}>+{fmtGBP(s.annual, 0)}/yr</span>
               </div>
             ))}
+            <div className="rp-warning" style={{ marginTop: '0.5rem', color: '#92400e' }}>
+              ⚠️ Remember: Added Pension may not be available at your chosen retirement age — it only starts at state pension age.
+            </div>
             {earlySources.map((s, i) => (
               <div key={`cont-${i}`} className="rp-source-row rp-source-continued">
                 <span className="rp-source-icon">{s.icon}</span>
@@ -1434,7 +1450,7 @@ function App() {
     salary: '', taxCode: '', age: '', yearsService: '',
     leaveAge: '', apCostPer100: '', apPaymentType: 'single',
     existingDbPension: '', existingIsaPot: '', existingSippPot: '',
-    statePensionAge: '67', statePension: '11502',
+    statePension: '11502',
     salSacrifice: '', flatRateExpenses: '', manualTaxablePay: '',
     propertyValue: '', mortgageBalance: '', mortgageRate: '', mortgageTermYears: '', monthlyMortgage: '',
     cashReserve: '', monthlyExpenses: '',
@@ -1500,7 +1516,7 @@ function App() {
     const existingDbPension = parseFloat(form.existingDbPension) || 0;
     const existingIsaPot    = parseFloat(form.existingIsaPot)    || 0;
     const existingSippPot   = parseFloat(form.existingSippPot)   || 0;
-    const statePensionAge   = parseInt(form.statePensionAge)     || 67;
+    const statePensionAge   = inferStatePensionAge(age);
     const statePension      = parseFloat(form.statePension)      || 0;
     const salSacrifice      = parseFloat(form.salSacrifice)      || 0;
     const flatRateExpenses  = parseFloat(form.flatRateExpenses)  || 0;
@@ -2104,10 +2120,10 @@ function App() {
             </div>
             <div className="form-group">
               <div className="label-row">
-                <label htmlFor="statePensionAge">State Pension Age</label>
-                <InfoHint>Currently 66, rising to 67 by 2028. DB pension and State Pension will only appear in the chart from this age.</InfoHint>
+                <label>State Pension Age</label>
+                <InfoHint>Automatically inferred from your age — DB pension and State Pension appear in the chart from this age.</InfoHint>
               </div>
-              <input id="statePensionAge" className="bare-input" name="statePensionAge" type="number" placeholder="67" min="60" max="75" value={form.statePensionAge} onChange={handleChange} />
+              <div className="plain-value">{inferStatePensionAge(parseInt(form.age) || 30)}</div>
             </div>
             <div className="form-group">
               <div className="label-row">
