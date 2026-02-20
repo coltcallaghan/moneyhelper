@@ -969,7 +969,7 @@ function RetirementTimelineChart({ results, form }) {
     // Now compute label positions including retirePossibleAge to avoid overlapping bottoms
     const allVerticalMarkers = [targetRetAge, 57, statePensionAge, retirePossibleAge].filter(v => typeof v === 'number' && !isNaN(v));
     const labelPosMap = computeLabelPositions(allVerticalMarkers, 2);
-    const pickLabelPos = (x) => labelPosMap[Number(x)] || 'insideTop';
+    
 
   return (
     <div className="chart-card">
@@ -1197,7 +1197,7 @@ function TotalWealthChart({ results, form }) {
   // Compute label positions for vertical markers on this chart to avoid overlap
   const verticalMarkersWealth = [targetRetAge, fireAge, 57].filter(v => typeof v === 'number' && !isNaN(v));
   const labelPosMapWealth = computeLabelPositions(verticalMarkersWealth, 2);
-  const pickLabelPosWealth = (x) => labelPosMapWealth[Number(x)] || 'insideTop';
+  
 
   return (
     <div className="chart-card">
@@ -1410,15 +1410,7 @@ function RetirementPictureCard({ results, isServing }) {
     statePension > 0 && { label: 'State Pension',                       annual: statePension,  color: '#f59e0b', icon: '\uD83C\uDFDB\uFE0F' },
   ].filter(Boolean);
 
-  // All sources combined (for non-deferred display when retirementAge >= SPA)
-  const allSources = [
-    dbAnnual > 0                          && { label: 'AFPS 15 DB Pension (from statement)', annual: dbAnnual,      color: '#10b981', note: 'Guaranteed, CPI-linked for life',      icon: '\uD83C\uDF96\uFE0F' },
-    (isServing && apAnnualFull > 0)      && { label: 'AFPS 15 Added Pension (calculated)',  annual: apAnnualFull,  color: '#34d399', note: 'Guaranteed, CPI-linked for life',      icon: '\u2795' },
-    (isServing && apOpt?.edpEligible && edpAnnual > 0) && { label: 'EDP Annual Income',                  annual: edpAnnual,     color: '#6ee7b7', note: 'Enhanced Departure Payment',           icon: '\uD83C\uDFC6' },
-    isaAnnual > 0                         && { label: 'ISA Drawdown (4%/yr)',                 annual: isaAnnual,     color: '#3b82f6', note: '100% tax-free income',                icon: '\uD83D\uDCB0' },
-    sippAnnual > 0                        && { label: 'SIPP Drawdown (4% of 75%)',            annual: sippAnnual,    color: '#a78bfa', note: 'Taxable above personal allowance',   icon: '\uD83C\uDFE6' },
-    statePension > 0                      && { label: 'State Pension',                       annual: statePension,  color: '#f59e0b', note: 'Full new State Pension',              icon: '\uD83C\uDFDB\uFE0F' },
-  ].filter(Boolean);
+  
 
   const oneOffs = [
     sippLump > 0 && {
