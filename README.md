@@ -11,6 +11,8 @@ This document explains, in UK English, the core mathematical models and fiscal a
 - Fix: Corrected `phaseAllocations` construction so phased allocations compute cumulative `startAge`/`endAge` and per-vehicle amounts correctly — fixes timeline and phased ISA pot computations.
 - Fix: Prevent division-by-zero in `calcMixScenarios` when `returnRate === 0` by using a safe fallback for the FV factor.
 - Fix: Moved `fmtGBP` and `fmtPct` formatter initialisations so they are defined before any function uses them (prevents runtime reference errors).
+ - Enhancement: AFPS‑15 inclusion is now decided dynamically by comparing a notional "efficiency" metric for AP vs allocating the same budget into a SIPP (and by a high marginal tax+NI heuristic). This prevents the action plan from always prioritising AP when SIPP/ISA would be superior for the same gross budget.
+ - Enhancement: SIPP top-up limits derived from a PA-driven FV factor are used to decide how much to allocate to SIPP vs ISA (see the SIPP/PA note below).
 
 ## Important constants & limits used
 - Personal Allowance (default): £12,570 (used unless a different tax code is parsed).
@@ -65,6 +67,7 @@ This document explains, in UK English, the core mathematical models and fiscal a
   - `C` = annual contribution,
   - `r` = real return rate (nominal return adjusted for inflation), and
   - `n` = number of years.
+ - Implementation note / safe-fallback: when `r === 0` the code avoids division-by-zero and uses the algebraic limit `FV = C × n` (or equivalently uses the `phaseYears` value directly for the contribution accumulation factor).
 - Existing pots are grown with simple compounding: existing × (1 + r)^n.
 - Real return is calculated as: realReturnRate = (1 + nominal) / (1 + inflation) − 1. This keeps projections in today's money.
 
@@ -76,9 +79,19 @@ This document explains, in UK English, the core mathematical models and fiscal a
 - The app computes AFPS‑15 Added Pension (AP) contributions using a per-£100/yr cost factor which can be provided by the user (or estimated). Important values in the code:
   - `AP_LIFETIME_MAX = 8571.21` — maximum added pension (in £/yr) allowed by the lifetime cap used in the model.
   - `costPer100actual` — the cost per £100 of added pension per year; if the user supplies a value it is used, otherwise an estimated cost is used.
-  - `pensionPerYear` — number of £100 units bought per year, derived from contribution divided by cost-per-£100.
-  - `totalPensionAcquired` — capped at `AP_LIFETIME_MAX`.
-  - `apPot` — the notional capital value of the added pension in retirement used in comparisons (e.g. `totalPensionAcquired * 25` as a rough DB capital equivalence, plus any EDP lump sum if applicable).
+ - `pensionPerYear` — number of £100 units bought per year, derived from contribution divided by cost-per-£100 (code: `apBPY = apAlloc / costPer100actual`).
+ - `totalPensionAcquired` — capped at `AP_LIFETIME_MAX`.
+ - `apPot` — the notional capital value of the added pension in retirement used in comparisons. The code uses a simple DB capital equivalence:
+
+  apCapitalEq = totalPensionAcquired × 25
+
+  (the ×25 proxy converts an annual DB-style pension into a rough lump-sum capital-equivalent used for wrapper-efficiency comparisons).
+
+ - AP inclusion decision: the MOD action-plan builder computes an "AP efficiency" metric (capital-equivalent bought per unit net cost) and compares it to an equivalent SIPP efficiency computed by projecting the same gross budget into a SIPP. AP is only included for the phase if either:
+   - apEfficiency ≥ 0.9 × sippEfficiency, or
+   - (taxRate + niRate) ≥ 0.5 (i.e. very high marginal tax/NI makes AP favourable).
+
+  This prevents always prioritising AP where a SIPP (or ISA) would give equal or better retirement capital for the same net cost.
 
 ## Action plan and phased allocations
 - The app builds a per-phase action plan (either MOD or civilian variant) which defines yearly allocations across vehicles such as AFPS Added Pension, SIPP, and ISA. Each phase lists start/end ages and per-vehicle gross allocations.
