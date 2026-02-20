@@ -7,6 +7,11 @@ This document explains, in UK English, the core mathematical models and fiscal a
 - The app compares Stocks & Shares ISAs (tax-free growth and withdrawals) with SIPP (pension) contributions which receive tax relief and are partially taxable in retirement.
 - For serving personnel the AFPS‑15 "Added Pension" (AP) is modelled as an additional DB-style pension with a lifetime cap; the app computes the implied cost and resulting pension value.
 
+## Recent changes
+- Fix: Corrected `phaseAllocations` construction so phased allocations compute cumulative `startAge`/`endAge` and per-vehicle amounts correctly — fixes timeline and phased ISA pot computations.
+- Fix: Prevent division-by-zero in `calcMixScenarios` when `returnRate === 0` by using a safe fallback for the FV factor.
+- Fix: Moved `fmtGBP` and `fmtPct` formatter initialisations so they are defined before any function uses them (prevents runtime reference errors).
+
 ## Important constants & limits used
 - Personal Allowance (default): £12,570 (used unless a different tax code is parsed).
 - Income tax bands (England/Wales assumptions for 2025/26 in this model):
@@ -78,6 +83,7 @@ This document explains, in UK English, the core mathematical models and fiscal a
 ## Action plan and phased allocations
 - The app builds a per-phase action plan (either MOD or civilian variant) which defines yearly allocations across vehicles such as AFPS Added Pension, SIPP, and ISA. Each phase lists start/end ages and per-vehicle gross allocations.
 - These allocations are used to compute `_phasePot` values for ISAs and phased growth for chart timelines, which gives a more realistic picture than an "all-in" comparison.
+Note: `startAge`/`endAge` for phases are computed cumulatively (each phase starts when the previous one ends), ensuring timeline and phased pot computations align with the action plan.
 
 ## Mix analysis and efficiency
 - The app evaluates a set of ISA/SIPP splits (100% ISA → 100% SIPP in predefined increments) and compares them by an efficiency metric defined roughly as `potAtRetirement / netCostToYou`.

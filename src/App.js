@@ -48,6 +48,10 @@ function getCalcSummary(form, results) {
   return `${form.age || '?'}y, £${form.salary || '?'} salary, £${form.contribution || '?'} invest, retire @${form.retirementAge || '?'} — Net Worth: ${results.netWorth ? fmtGBP(results.netWorth.totalNetWorth, 0) : '?'}`;
 }
 
+const fmtGBP = (n, dec = 0) =>
+  new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: dec }).format(n);
+const fmtPct = (n, dec = 0) => `${(n * 100).toFixed(dec)}%`;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // TAX CODE PARSING
 // Determines your personal allowance from HMRC tax code.
@@ -150,9 +154,6 @@ function projectPot(annualContrib, years, r) {
   return annualContrib * ((Math.pow(1 + r, years) - 1) / r) * (1 + r);
 }
 
-const fmtGBP = (n, dec = 0) =>
-  new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: dec }).format(n);
-const fmtPct = (n, dec = 0) => `${(n * 100).toFixed(dec)}%`;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ISA / SIPP MIX ANALYSIS
@@ -203,7 +204,9 @@ function calcMixScenarios(contribution, years, returnRate, taxRate) {
   // "Sweet spot": max SIPP where retirement drawdown stays within personal allowance (no tax)
   // sippPot * 0.75 * 0.04 = 12570 → sippPot = 419,000
   const paFilledPot  = 12570 / (0.75 * 0.04);
-  const fvFactor     = years > 0 ? ((Math.pow(1 + returnRate, years) - 1) / returnRate) * (1 + returnRate) : 1;
+  const fvFactor = (years > 0 && returnRate !== 0)
+    ? ((Math.pow(1 + returnRate, years) - 1) / returnRate) * (1 + returnRate)
+    : years;
   const sippMaxForPA = Math.min((paFilledPot / fvFactor) / 1.25, contribution); // net equiv
 
   return { scenarios, bestIdx, sippMaxForPA };
@@ -308,14 +311,22 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
       sippNetLimit, fmtGBP, fmtPct, projectPot, alreadyLeft
     });
   }
-  phaseAllocations = actionPlan && actionPlan.phases ? actionPlan.phases.flatMap(p => p.steps.map((step, i) => ({
-    startAge: age + (i === 0 ? 0 : p.years),
-    endAge: age + p.years,
-    ap: step.vehicle === 'AFPS 15 Added Pension' ? step.gross : 0,
-    sippNet: step.vehicle === 'SIPP (Private Pension)' ? step.gross : 0,
-    sippGross: step.vehicle === 'SIPP (Private Pension)' ? step.gross * 1.25 : 0,
-    isa: step.vehicle === 'Stocks & Shares ISA' ? step.gross : 0,
-  }))) : [];
+  if (actionPlan && actionPlan.phases) {
+    let cumulativeYears = 0;
+    phaseAllocations = actionPlan.phases.map(p => {
+      const phaseStartAge = age + cumulativeYears;
+      const phaseEndAge   = phaseStartAge + p.years;
+      cumulativeYears    += p.years;
+      return {
+        startAge:  phaseStartAge,
+        endAge:    phaseEndAge,
+        ap:        p.steps.find(s => s.vehicle === 'AFPS 15 Added Pension')   ?.gross ?? 0,
+        sippNet:   p.steps.find(s => s.vehicle === 'SIPP (Private Pension)')  ?.gross ?? 0,
+        sippGross: (p.steps.find(s => s.vehicle === 'SIPP (Private Pension)') ?.gross ?? 0) * 1.25,
+        isa:       p.steps.find(s => s.vehicle === 'Stocks & Shares ISA')     ?.gross ?? 0,
+      };
+    });
+  }
 
   // ── ISA calculation using actual phase allocations ───────────────────────
   const isaLimit = 20000;

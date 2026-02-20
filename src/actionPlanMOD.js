@@ -18,7 +18,7 @@ export function buildMODActionPlan({
         const apNet = apAlloc * (1 - taxRate - niRate);
         const apSaved = apAlloc - apNet;
         const apBPY = apAlloc / costPer100actual;
-        const apPensionForPhase = Math.min(apBPY * 100 * Math.min(phaseYears, leaveYears), AP_LIFETIME_MAX);
+        const apPensionForPhase = Math.min(apBPY * 100, AP_LIFETIME_MAX);
         steps.push({
           vehicle: 'AFPS 15 Added Pension', icon: '🎖️', color: '#10b981', priority: 1,
           gross: apAlloc, netCost: apNet, saving: apSaved,
@@ -34,7 +34,9 @@ export function buildMODActionPlan({
 
     // SIPP
     const paFilledPotLocal = 12570 / (0.75 * 0.04);
-    const fvFactorLocal = phaseYears > 0 ? ((Math.pow(1 + realReturnRate, phaseYears) - 1) / realReturnRate) * (1 + realReturnRate) : 1;
+    const fvFactorLocal = (phaseYears > 0 && realReturnRate !== 0)
+      ? ((Math.pow(1 + realReturnRate, phaseYears) - 1) / realReturnRate) * (1 + realReturnRate)
+      : phaseYears;
     const sippMaxForPALocal = Math.min((paFilledPotLocal / fvFactorLocal) / 1.25, remaining);
 
     if (remaining > 0) {
@@ -151,7 +153,7 @@ export function buildMODActionPlan({
   return {
     phases,
     totalGross: contribution,
-    totalNet: phases.length > 0 ? phases[0].totalNet : contribution,
+    totalNet: phases.reduce((s, p) => s + p.totalNet, 0),
     totalSaved: apTotalSaved,
     alreadyLeft,
   };
