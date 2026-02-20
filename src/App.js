@@ -320,10 +320,10 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
       return {
         startAge:  phaseStartAge,
         endAge:    phaseEndAge,
-        ap:        p.steps.find(s => s.vehicle === 'AFPS 15 Added Pension')   ?.gross ?? 0,
-        sippNet:   p.steps.find(s => s.vehicle === 'SIPP (Private Pension)')  ?.gross ?? 0,
-        sippGross: (p.steps.find(s => s.vehicle === 'SIPP (Private Pension)') ?.gross ?? 0) * 1.25,
-        isa:       p.steps.find(s => s.vehicle === 'Stocks & Shares ISA')     ?.gross ?? 0,
+        ap:        p.steps.find(s => s.vehicle === 'AFPS 15 Added Pension')?.gross ?? 0,
+        sippNet:   p.steps.find(s => s.vehicle === 'SIPP (Private Pension)')?.gross ?? 0,
+        sippGross: (p.steps.find(s => s.vehicle === 'SIPP (Private Pension)')?.gross ?? 0) * 1.25,
+        isa:       p.steps.find(s => s.vehicle === 'Stocks & Shares ISA')?.gross ?? 0,
       };
     });
   }
