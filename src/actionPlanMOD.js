@@ -11,25 +11,44 @@ export function buildMODActionPlan({
     const steps = [];
     let remaining = budget;
 
-    // AP — only if still serving in this phase
-    if (includeAP && !alreadyLeft && leaveYears > 0 && remaining > 0) {
-      const apAlloc = Math.min(remaining, apMaxContrib);
-      if (apAlloc > 0) {
-        const apNet = apAlloc * (1 - taxRate - niRate);
-        const apSaved = apAlloc - apNet;
-        const apBPY = apAlloc / costPer100actual;
-        const apPensionForPhase = Math.min(apBPY * 100, AP_LIFETIME_MAX);
-        steps.push({
-          vehicle: 'AFPS 15 Added Pension', icon: '🎖️', color: '#10b981', priority: 1,
-          gross: apAlloc, netCost: apNet, saving: apSaved,
-          outcome: `Buys ${fmtGBP(apPensionForPhase, 0)}/yr guaranteed CPI-linked pension for life`,
-          reason: `Salary sacrifice saves ${fmtPct(taxRate)} income tax + ${fmtPct(niRate)} NI = ${fmtPct(taxRate + niRate)} total. Every ${fmtGBP(1)} gross costs just ${fmtGBP(1 - taxRate - niRate, 2)} net.`,
-          note: apAlloc >= apMaxContrib
-            ? `Capped at ~${fmtGBP(apMaxContrib)}/yr to stay within the ${fmtGBP(AP_LIFETIME_MAX, 0)}/yr career limit on pension receivable over ${leaveYears} years.`
-            : null,
-        });
-        remaining -= apAlloc;
-      }
+      // AP — only if still serving in this phase. Decide dynamically whether AP
+      // is actually more efficient than SIPP for this budget; avoid always
+      // prioritising AP just because it's available.
+      if (includeAP && !alreadyLeft && leaveYears > 0 && remaining > 0) {
+        const apAlloc = Math.min(remaining, apMaxContrib);
+        if (apAlloc > 0) {
+          const apNet = apAlloc * (1 - taxRate - niRate);
+          const apSaved = apAlloc - apNet;
+          const apBPY = apAlloc / costPer100actual;
+          const apPensionForPhase = Math.min(apBPY * 100, AP_LIFETIME_MAX);
+
+          // Estimate AP 'efficiency' comparable to other wrappers: treat AP pension as a capital-equivalent (×25)
+          const apCapitalEq = apPensionForPhase * 25; // capital equivalent of the guaranteed pension
+          const apEfficiency = apNet > 0 ? (apCapitalEq / apNet) : 0;
+
+          // Quick estimate for SIPP efficiency on the same budget (if all allocated instead to SIPP)
+          const sippGrossIfAll = apAlloc * 1.25;
+          const sippPotIfAll = projectPot(sippGrossIfAll, phaseYears, realReturnRate);
+          const sippNetIfAll = apAlloc - (taxRate > 0.20 ? sippGrossIfAll * (taxRate - 0.20) : 0);
+          const sippEfficiency = sippNetIfAll > 0 ? (sippPotIfAll / sippNetIfAll) : 0;
+
+          // Only include AP if it looks reasonably efficient compared with SIPP, or
+          // if the marginal tax/NI benefits are very large (i.e., taxRate+niRate high).
+          const includeAPActual = (apEfficiency >= sippEfficiency * 0.9) || ((taxRate + niRate) >= 0.5);
+
+          if (includeAPActual) {
+            steps.push({
+              vehicle: 'AFPS 15 Added Pension', icon: '🎖️', color: '#10b981', priority: 1,
+              gross: apAlloc, netCost: apNet, saving: apSaved,
+              outcome: `Buys ${fmtGBP(apPensionForPhase, 0)}/yr guaranteed CPI-linked pension for life`,
+              reason: `Salary sacrifice saves ${fmtPct(taxRate)} income tax + ${fmtPct(niRate)} NI = ${fmtPct(taxRate + niRate)} total. Every ${fmtGBP(1)} gross costs just ${fmtGBP(1 - taxRate - niRate, 2)} net.`,
+              note: apAlloc >= apMaxContrib
+                ? `Capped at ~${fmtGBP(apMaxContrib)}/yr to stay within the ${fmtGBP(AP_LIFETIME_MAX, 0)}/yr career limit on pension receivable over ${leaveYears} years.`
+                : null,
+            });
+            remaining -= apAlloc;
+          }
+        }
     }
 
     // SIPP
