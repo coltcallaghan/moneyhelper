@@ -2223,23 +2223,23 @@ function App() {
           <div className="tax-summary-card" ref={taxSummaryRef}>
             <p className="form-section-label" style={{ marginBottom: '1rem' }}>Your Tax Summary (2025/26)</p>
             <div className="tax-summary-grid">
+              <div className="tax-summary-item">
+                <span className="ts-label">Gross Pay</span>
+                <span className="ts-value">{fmtGBP(results.salary)}</span>
+                {results.taxSummary.hasDeductions && (
+                  <span className="ts-sub">
+                    {results.taxSummary.salSacrifice > 0 && `−${fmtGBP(results.taxSummary.salSacrifice)} sal. sacrifice`}
+                    {results.taxSummary.salSacrifice > 0 && results.taxSummary.flatRateExpenses > 0 && ', '}
+                    {results.taxSummary.flatRateExpenses > 0 && `−${fmtGBP(results.taxSummary.flatRateExpenses)} expenses`}
+                  </span>
+                )}
+              </div>
               {results.taxSummary.hasDeductions && (
-                <>
-                  <div className="tax-summary-item">
-                    <span className="ts-label">Gross Pay</span>
-                    <span className="ts-value">{fmtGBP(results.salary)}</span>
-                    <span className="ts-sub">
-                      {results.taxSummary.salSacrifice > 0 && `−${fmtGBP(results.taxSummary.salSacrifice)} sal. sacrifice`}
-                      {results.taxSummary.salSacrifice > 0 && results.taxSummary.flatRateExpenses > 0 && ', '}
-                      {results.taxSummary.flatRateExpenses > 0 && `−${fmtGBP(results.taxSummary.flatRateExpenses)} expenses`}
-                    </span>
-                  </div>
-                  <div className="tax-summary-item">
-                    <span className="ts-label">Taxable Pay</span>
-                    <span className="ts-value">{fmtGBP(results.taxSummary.adjustedSalary)}</span>
-                    <span className="ts-sub">{fmtGBP(results.salary - results.taxSummary.adjustedSalary)} sheltered from tax</span>
-                  </div>
-                </>
+                <div className="tax-summary-item">
+                  <span className="ts-label">Taxable Pay</span>
+                  <span className="ts-value">{fmtGBP(results.taxSummary.adjustedSalary)}</span>
+                  <span className="ts-sub">{fmtGBP(results.salary - results.taxSummary.adjustedSalary)} sheltered from tax</span>
+                </div>
               )}
               <div className="tax-summary-item">
                 <span className="ts-label">Personal Allowance</span>
