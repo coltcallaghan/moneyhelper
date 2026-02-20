@@ -234,7 +234,7 @@ function calcMixScenarios(contribution, years, returnRate, taxRate) {
 // ─────────────────────────────────────────────────────────────────────────────
 // CORE CALCULATION ENGINE
 // ─────────────────────────────────────────────────────────────────────────────
-function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer100, apPaymentType, existingDbPension, existingIsaPot, existingSippPot, statePensionAge, statePension, contribution, retirementAge, returnRate, inflationRate, targetIncome, salSacrifice = 0, flatRateExpenses = 0, manualTaxablePay = 0, propertyValue = 0, mortgageBalance = 0, mortgageRate = 0, mortgageTermYears = 0, monthlyMortgage = 0, cashReserve = 0, monthlyExpenses = 0, isServing = false }) {
+function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer100, apPaymentType, existingDbPension, existingIsaPot, existingSippPot, statePensionAge, statePension, contribution, retirementAge, returnRate, inflationRate, targetIncome, salSacrifice = 0, flatRateExpenses = 0, manualTaxablePay = 0, propertyValue = 0, mortgageBalance = 0, mortgageRate = 0, mortgageTermYears = 0, monthlyMortgage = 0, propertyAppRate = 0.02, cashReserve = 0, monthlyExpenses = 0, isServing = false }) {
   const taxInfo  = parseTaxCode(taxCode);
   const years    = Math.max(0, retirementAge - age);
 
@@ -410,6 +410,7 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
   // Exclude MOD-only option for civilians
   const baseOptions = [isa, sipp];
   const optionsList = isServing ? [...baseOptions, addedPension] : baseOptions;
+
   const options = optionsList.map(o => ({
     ...o,
     efficiency: o.costToYou > 0 ? o.potAtRetirement / o.costToYou : 1,
@@ -495,7 +496,11 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
   // Action plan logic moved to separate modules (MOD vs Civilian)
 
   // Net worth at retirement
-  const isaOptPot   = isa.potAtRetirement;
+  // Prefer the phase-based ISA pot (matches the Action Plan) when phase allocations exist;
+  // otherwise fall back to the "all-in" ISA pot used for comparison.
+  const isaOptPot   = (isa && Object.prototype.hasOwnProperty.call(isa, '_phasePot') && phaseAllocations && phaseAllocations.length > 0)
+    ? isa._phasePot
+    : isa.potAtRetirement;
   const sippOptPot  = sipp.potAtRetirement;
   const apOptPot    = addedPension.potAtRetirement;
   const cashAtRetirement = cashReserve; // kept at nominal (inflation erodes it)
@@ -517,26 +522,52 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
   const equityNow = propertyValue - mortgageBalance;
   const yearsUntilRetirement = Math.max(0, retirementAge - age);
   const yearsToRepayBeforeRetire = Math.min(mortgageTermYears, yearsUntilRetirement);
-  const remainingBalanceAtRetire = Math.max(0, mortgageBalance - (monthlyMortgage * 12 * yearsToRepayBeforeRetire));
-  const equityRetirement = propertyValue - remainingBalanceAtRetire;
+  // Compute an effective monthly payment if none provided, using amortisation formula
+  const monthlyRate = mortgageRate; // mortgageRate is already a decimal (e.g., 0.045 for 4.5%)
+  const monthsTotal = mortgageTermYears * 12;
+  const computedMonthly = (monthlyMortgage > 0)
+    ? monthlyMortgage
+    : (mortgageBalance > 0 && monthsTotal > 0
+      ? (monthlyRate > 0
+          ? (mortgageBalance * (monthlyRate / 12)) / (1 - Math.pow(1 + (monthlyRate / 12), -monthsTotal))
+          : mortgageBalance / monthsTotal)
+      : 0);
+
+  // Remaining balance at retirement: amortisation formula for k payments
+  const monthsUntilRetire = Math.min(monthsTotal, yearsToRepayBeforeRetire * 12);
+  let remainingBalanceAtRetire = mortgageBalance;
+  if (monthsUntilRetire > 0 && computedMonthly > 0) {
+    const r = monthlyRate / 12;
+    if (r === 0) {
+      remainingBalanceAtRetire = Math.max(0, mortgageBalance - computedMonthly * monthsUntilRetire);
+    } else {
+      const pow = Math.pow(1 + r, monthsUntilRetire);
+      remainingBalanceAtRetire = Math.max(0, mortgageBalance * pow - computedMonthly * ((pow - 1) / r));
+    }
+  }
+  // Grow property value to retirement using the house appreciation rate
+  const propertyValueAtRetire = propertyValue > 0 ? Math.round(propertyValue * Math.pow(1 + propertyAppRate, yearsUntilRetirement)) : 0;
+  const equityRetirement = propertyValueAtRetire - remainingBalanceAtRetire;
   const shouldOverpay = mortgageRate > 0.05 && mortgageBalance > 0;
   const mortgageVerdict = shouldOverpay
     ? 'High mortgage rate — consider overpaying the mortgage if you have excess cash.'
     : 'Low mortgage rate — consider investing excess cash for potentially higher returns.';
-  // Estimate total interest over remaining term (approx): payments - principal
-  const totalInterestEst = (monthlyMortgage > 0 && mortgageTermYears > 0)
-    ? Math.max(0, (monthlyMortgage * 12 * mortgageTermYears) - mortgageBalance)
+
+  // Estimate total interest over remaining term (payments - principal)
+  const totalInterestEst = (computedMonthly > 0 && monthsTotal > 0)
+    ? Math.max(0, (computedMonthly * monthsTotal) - mortgageBalance)
     : 0;
-  // Estimate mortgage paid-off age if payments provided
-  const mortgagePaidOffAge = (monthlyMortgage > 0 && mortgageBalance > 0)
-    ? age + Math.ceil(mortgageBalance / (monthlyMortgage * 12))
+
+  // Estimate mortgage paid-off age (using monthsTotal)
+  const mortgagePaidOffAge = (monthsTotal > 0 && mortgageBalance > 0)
+    ? age + Math.ceil(monthsTotal / 12)
     : null;
   const mortgageAnalysis = {
     propertyValue, mortgageBalance, mortgageRate, mortgageTermYears, monthlyMortgage,
     equityNow, equityRetirement, shouldOverpay, verdict: mortgageVerdict,
     totalInterestEst, mortgagePaidOffAge,
   };
-  const propertyEquityAtRetirement = mortgageAnalysis ? mortgageAnalysis.equityRetirement : propertyValue;
+  const propertyEquityAtRetirement = mortgageAnalysis ? mortgageAnalysis.equityRetirement : propertyValueAtRetire;
   const liquidWealth  = isaOptPot + sippOptPot;
   const dbOptPot = existingDbPension * 25;
   const totalNetWorth = liquidWealth + apOptPot + propertyEquityAtRetirement + cashAtRetirement;
@@ -1183,18 +1214,30 @@ function RetirementPictureCard({ results, isServing }) {
   const apAnnualFull = (isServing && apOpt) ? apOpt.totalPensionAcquired || 0 : 0;
   const edpLump    = (isServing && apOpt) ? apOpt.edpLumpSum || 0 : 0;
   const edpAnnual  = (isServing && apOpt) ? apOpt.edpIncome || 0 : 0;
-  const isaAnnual  = isaOpt?.annualIncomeAtRetirement || 0;
+  // Prefer the phase-based ISA pot (matches the Action Plan). If phase data
+  // exists (even if zero), use it; otherwise fall back to the all-in ISA pot.
+  let isaPhasePot;
+  if (isaOpt && Object.prototype.hasOwnProperty.call(isaOpt, '_phasePot')) {
+    isaPhasePot = isaOpt._phasePot;
+  } else {
+    isaPhasePot = isaOpt?.potAtRetirement ?? 0;
+  }
+  const isaAnnual = isaPhasePot > 0 ? Math.round(isaPhasePot * 0.04) : 0;
   const sippAnnual = sippOpt?.annualIncomeAtRetirement || 0;
   const sippLump   = sippOpt?.taxFreeLump || 0;
 
-  // Income available immediately at target retirement age
-  const earlyTotal = isaAnnual + sippAnnual + (apOpt?.edpEligible ? edpAnnual : 0);
-  // Full income once state pension age reached (everything kicks in)
-  const fullTotal  = earlyTotal + dbAnnual + apAnnualFull + statePension;
+  const sippAvailableAge = Math.max(57, retirementAge);
+  const sippAvailableNow = retirementAge >= 57;
+
+  // Income available immediately at target retirement age (exclude SIPP if locked until 57)
+  const earlyTotal = isaAnnual + (sippAvailableNow ? sippAnnual : 0) + (apOpt?.edpEligible ? edpAnnual : 0);
+  // Full income once all sources (including SIPP and deferred pensions) are available
+  const fullTotal  = isaAnnual + sippAnnual + (apOpt?.edpEligible ? edpAnnual : 0) + dbAnnual + apAnnualFull + statePension;
 
   const fireTarget      = results.fireNumber > 0 ? results.fireNumber / 25 : 0;
-  // Use the full total for FIRE progress — that's your eventual steady-state
-  const fireProgressAmt = hasDeferredIncome ? fullTotal : earlyTotal + dbAnnual + apAnnualFull + statePension;
+  // Use the income available at the user's target retirement age for FIRE progress
+  // (earlyTotal = income available immediately at retirementAge)
+  const fireProgressAmt = earlyTotal;
   const fireProgress    = fireTarget > 0 ? Math.min(100, (fireProgressAmt / fireTarget) * 100) : 0;
 
   // Build sources for early retirement phase
@@ -1222,8 +1265,14 @@ function RetirementPictureCard({ results, isServing }) {
   ].filter(Boolean);
 
   const oneOffs = [
-    sippLump > 0                         && { label: 'SIPP 25% Tax-Free Lump Sum', value: sippLump, color: '#a78bfa', note: 'Take at retirement — zero tax',    icon: '\uD83C\uDFE6' },
-    (apOpt?.edpEligible && edpLump > 0)  && { label: 'EDP Tax-Free Lump Sum',      value: edpLump,  color: '#10b981', note: '2.25\u00d7 added pension — zero tax', icon: '\uD83C\uDFC6' },
+    sippLump > 0 && {
+      label: 'SIPP 25% Tax-Free Lump Sum',
+      value: sippLump,
+      color: '#a78bfa',
+      note: sippAvailableNow ? 'Take at retirement — zero tax' : `Available at age ${sippAvailableAge}`,
+      icon: '\uD83C\uDFE6'
+    },
+    (apOpt?.edpEligible && edpLump > 0) && { label: 'EDP Tax-Free Lump Sum', value: edpLump, color: '#10b981', note: '2.25\u00d7 added pension — zero tax', icon: '\uD83C\uDFC6' },
   ].filter(Boolean);
 
   const renderSourceRow = (s, i) => (
@@ -1341,8 +1390,8 @@ function RetirementPictureCard({ results, isServing }) {
           </div>
           <p className="rp-fire-note">
             {fireProgress >= 100
-              ? `\uD83C\uDF89 Your full income from age ${statePensionAge} (${fmtGBP(fireProgressAmt, 0)}/yr) meets or exceeds your FIRE target!`
-              : `${fmtGBP(Math.max(0, fireTarget - fireProgressAmt), 0)}/yr short of FIRE target at age ${statePensionAge} \u2014 consider increasing contributions or adjusting retirement age.`}
+              ? `\uD83C\uDF89 Your full income from age ${retirementAge} (${fmtGBP(fireProgressAmt, 0)}/yr) meets or exceeds your FIRE target!`
+              : `${fmtGBP(Math.max(0, fireTarget - fireProgressAmt), 0)}/yr short of FIRE target at age ${retirementAge} \u2014 consider increasing contributions or adjusting retirement age.`}
             {hasDeferredIncome && earlyTotal < fireTarget && earlyTotal > 0 && `\n(Note: only ${fmtGBP(earlyTotal, 0)}/yr available at age ${retirementAge} before pensions unlock.)`}
           </p>
         </div>
@@ -1526,6 +1575,7 @@ function App() {
     const mortgageRate      = (parseFloat(form.mortgageRate)      || 0) / 100;
     const mortgageTermYears = parseFloat(form.mortgageTermYears) || 0;
     const monthlyMortgage   = parseFloat(form.monthlyMortgage)   || 0;
+    const propertyAppRate   = parseFloat(form.propertyAppRate)   || 0.02;
     const cashReserve       = parseFloat(form.cashReserve)       || 0;
     const monthlyExpenses   = parseFloat(form.monthlyExpenses)   || 0;
     const contributionRaw  = parseFloat(form.contribution)      || 0;
@@ -1545,7 +1595,7 @@ function App() {
       // was only passed through for active serving users which meant
       // veterans couldn't see their DB pension in the retirement timeline.
       existingDbPension: existingDbPension,
-      existingIsaPot, existingSippPot, statePensionAge, statePension, contribution, retirementAge, returnRate, inflationRate, targetIncome, salSacrifice, flatRateExpenses, manualTaxablePay, propertyValue, mortgageBalance, mortgageRate, mortgageTermYears, monthlyMortgage, cashReserve, monthlyExpenses,
+      existingIsaPot, existingSippPot, statePensionAge, statePension, contribution, retirementAge, returnRate, inflationRate, targetIncome, salSacrifice, flatRateExpenses, manualTaxablePay, propertyValue, mortgageBalance, mortgageRate, mortgageTermYears, monthlyMortgage, propertyAppRate, cashReserve, monthlyExpenses,
       isServing: !!form.isServing
     }));
     setTimeout(() => {
@@ -1723,7 +1773,10 @@ function App() {
             </div>
             <div className="form-group">
               <label htmlFor="age">Age<span className="required-star">*</span></label>
-              <input id="age" className="bare-input" name="age" type="number" placeholder="35" min="18" max="65" value={form.age} onChange={handleChange} required />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <input id="age" name="age" type="range" min="18" max="75" step="1" value={form.age || 35} onChange={handleChange} />
+                <span style={{ minWidth: '3.5rem', textAlign: 'right' }}>{form.age || 35} yrs</span>
+              </div>
             </div>
             {form.isServing && (
               <div className="form-group">
@@ -1840,17 +1893,21 @@ function App() {
                   <label htmlFor="leaveAge">Expected Age When Leaving MOD <span className="label-hint">(for AFPS 15)</span></label>
                   <InfoHint>Leave blank to assume you serve until retirement. AFPS 15 contributions stop at this age.</InfoHint>
                 </div>
-                <input
-                  id="leaveAge"
-                  className={`bare-input ${form.leaveAge && form.age && parseInt(form.leaveAge) <= parseInt(form.age) ? 'input-invalid' : ''}`}
-                  name="leaveAge"
-                  type="number"
-                  placeholder={form.retirementAge || '60'}
-                  min={form.age ? (parseInt(form.age) ) : 18}
-                  max="75"
-                  value={form.leaveAge}
-                  onChange={handleChange}
-                />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <input
+                    id="leaveAge"
+                    className={`${form.leaveAge && form.age && parseInt(form.leaveAge) <= parseInt(form.age) ? 'input-invalid' : ''}`}
+                    name="leaveAge"
+                    type="range"
+                    placeholder={form.retirementAge || '60'}
+                    min={form.age ? (parseInt(form.age) ) : 18}
+                    max="75"
+                    step="1"
+                    value={form.leaveAge || (parseInt(form.age) + 1) || 30}
+                    onChange={handleChange}
+                  />
+                  <span style={{ minWidth: '3.5rem', textAlign: 'right' }}>{form.leaveAge || (parseInt(form.age) + 1) || ''} yrs</span>
+                </div>
                 {/* Inline validation/help text:
                     - If user enters a leave age <= current age, treat as "already left" and inform them.
                     - For a future leave, recommend entering at least age+1. */}
@@ -1987,9 +2044,9 @@ function App() {
                 </div>
                 <div className="form-group">
                   <label htmlFor="mortgageRate">Mortgage Interest Rate</label>
-                  <div className="input-wrap">
-                    <input id="mortgageRate" name="mortgageRate" type="number" step="0.01" placeholder="4.5" min="0" max="20" value={form.mortgageRate} onChange={handleChange} />
-                    <span className="input-suffix">%</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      <input id="mortgageRate" name="mortgageRate" type="range" min="0" max="10" step="0.1" value={form.mortgageRate || 4.5} onChange={handleChange} />
+                    <span style={{ minWidth: '4.5rem', textAlign: 'right' }}>{fmtPct((parseFloat(form.mortgageRate || 4.5) || 0) / 100, 2)}</span>
                   </div>
                 </div>
                 <div className="form-group">
@@ -2005,6 +2062,13 @@ function App() {
                     <span className="input-prefix">£</span>
                     <input id="monthlyMortgage" name="monthlyMortgage" type="number" placeholder="1100" min="0" value={form.monthlyMortgage} onChange={handleChange} />
                     <span className="input-suffix">/mo</span>
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label htmlFor="propertyAppRate">House annual appreciation</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <input id="propertyAppRate" name="propertyAppRate" type="range" min="0" max="0.10" step="0.001" value={form.propertyAppRate || 0.02} onChange={handleChange} />
+                    <span style={{ minWidth: '4.5rem', textAlign: 'right' }}>{fmtPct(parseFloat(form.propertyAppRate || 0.02), 2)}</span>
                   </div>
                 </div>
               </div>
@@ -2116,7 +2180,10 @@ function App() {
             </div>
             <div className="form-group">
               <label htmlFor="retirementAge">Target Retirement Age<span className="required-star">*</span></label>
-              <input id="retirementAge" className="bare-input" name="retirementAge" type="number" placeholder="60" min="40" max="75" value={form.retirementAge} onChange={handleChange} required />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <input id="retirementAge" name="retirementAge" type="range" min="40" max="75" step="1" value={form.retirementAge || 60} onChange={handleChange} required />
+                <span style={{ minWidth: '3.5rem', textAlign: 'right' }}>{form.retirementAge || 60} yrs</span>
+              </div>
             </div>
             <div className="form-group">
               <div className="label-row">
@@ -2147,7 +2214,10 @@ function App() {
             </div>
             <div className="form-group">
               <label htmlFor="returnRate">Expected Annual Return (nominal) <span className="label-hint">(before inflation)</span><span className="required-star">*</span></label>
-              <input id="returnRate" className="bare-input" name="returnRate" type="number" placeholder="0.07" min="0" max="0.20" step="0.01" value={form.returnRate} onChange={handleChange} required />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <input id="returnRate" name="returnRate" type="range" min="0" max="0.15" step="0.001" value={form.returnRate || 0.07} onChange={handleChange} required />
+                <span style={{ minWidth: '4.5rem', textAlign: 'right' }}>{fmtPct(parseFloat(form.returnRate || 0.07), 2)}</span>
+              </div>
               <div className="preset-buttons">
                 {RETURN_PRESETS.map(p => (
                   <button key={p.value} type="button" className={`preset-btn ${parseFloat(form.returnRate) === p.value ? 'active' : ''}`}
@@ -2162,7 +2232,10 @@ function App() {
                 <label htmlFor="inflationRate">Expected Inflation Rate<span className="required-star">*</span></label>
                 <InfoHint>Bank of England target is 2%. All projections shown in today's purchasing power after adjusting for inflation.</InfoHint>
               </div>
-              <input id="inflationRate" className="bare-input" name="inflationRate" type="number" placeholder="0.025" min="0" max="0.10" step="0.005" value={form.inflationRate} onChange={handleChange} required />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <input id="inflationRate" name="inflationRate" type="range" min="0" max="0.10" step="0.001" value={form.inflationRate || 0.025} onChange={handleChange} required />
+                <span style={{ minWidth: '4.5rem', textAlign: 'right' }}>{fmtPct(parseFloat(form.inflationRate || 0.025), 2)}</span>
+              </div>
               <div className="preset-buttons">
                 {INFLATION_PRESETS.map(p => (
                   <button key={p.value} type="button" className={`preset-btn ${parseFloat(form.inflationRate) === p.value ? 'active' : ''}`}
