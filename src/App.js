@@ -968,7 +968,6 @@ function RetirementTimelineChart({ results, form }) {
 
     // Now compute label positions including retirePossibleAge to avoid overlapping bottoms
     const allVerticalMarkers = [targetRetAge, 57, statePensionAge, retirePossibleAge].filter(v => typeof v === 'number' && !isNaN(v));
-    const labelPosMap = computeLabelPositions(allVerticalMarkers, 2);
     
 
   return (
@@ -1196,7 +1195,6 @@ function TotalWealthChart({ results, form }) {
 
   // Compute label positions for vertical markers on this chart to avoid overlap
   const verticalMarkersWealth = [targetRetAge, fireAge, 57].filter(v => typeof v === 'number' && !isNaN(v));
-  const labelPosMapWealth = computeLabelPositions(verticalMarkersWealth, 2);
   
 
   return (
