@@ -252,9 +252,17 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
   const apNISaving = contribution * niRate;
   const apNetCost = contribution - apTaxSaving - apNISaving;
 
-  const effectiveLeaveAge = Math.min(Math.max(leaveAge || retirementAge, age), retirementAge);
+  let effectiveLeaveAge;
+  let alreadyLeft = false;
+  if (typeof leaveAge !== 'undefined' && leaveAge !== null && !isNaN(leaveAge) && leaveAge <= age) {
+    // Explicitly marked as already left — reflect that state (no future contributions)
+    alreadyLeft = true;
+    effectiveLeaveAge = age;
+  } else {
+    // If a leaveAge is provided, ensure it is at least one year older than current age
+    effectiveLeaveAge = Math.min(Math.max(leaveAge || retirementAge, age + 1), retirementAge);
+  }
   const leaveYears = Math.max(0, effectiveLeaveAge - age);
-  const alreadyLeft = (typeof leaveAge !== 'undefined' && leaveAge <= age) || false;
 
   const AP_LIFETIME_MAX = 8571.21;
   const AP_MAX_MULTIPLES = AP_LIFETIME_MAX / 100;
@@ -517,6 +525,7 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
   };
   const propertyEquityAtRetirement = mortgageAnalysis ? mortgageAnalysis.equityRetirement : propertyValue;
   const liquidWealth  = isaOptPot + sippOptPot;
+  const dbOptPot = existingDbPension * 25;
   const totalNetWorth = liquidWealth + apOptPot + propertyEquityAtRetirement + cashAtRetirement;
 
   return {
@@ -526,7 +535,7 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
     taxSummary: { incomeTax, ni, takeHome, effectiveTaxRate: effTaxRate, marginalRate: taxRate, niRate, effectivePA, taxInfo, adjustedSalary: taxBasis, niableSalary: niBasis, salSacrifice, flatRateExpenses, hasDeductions },
     mortgageAnalysis,
     cashAnalysis: hasCash ? { cashReserve, monthlyExpenses, emergencyTarget, emergencyShortfall, emergencyOk } : null,
-    netWorth: { isaOptPot, sippOptPot, apOptPot, cashAtRetirement, propertyEquityAtRetirement, liquidWealth, totalNetWorth },
+    netWorth: { isaOptPot, sippOptPot, apOptPot, cashAtRetirement, propertyEquityAtRetirement, liquidWealth, totalNetWorth, dbOptPot },
     // Expose helpful limits for UI actions (e.g., maximise tax savings)
     sippNetLimit, apMaxContrib,
   };
@@ -1515,7 +1524,11 @@ function App() {
       leaveAge: form.isServing ? leaveAge : retirementAge,
       apCostPer100: form.isServing ? apCostPer100 : 0,
       apPaymentType: form.isServing ? form.apPaymentType : 'single',
-      existingDbPension: form.isServing ? existingDbPension : 0,
+      // Allow veterans/civilians to supply an existing DB pension value
+      // (e.g., MOD DB Pension — Annual Statement Value). Previously this
+      // was only passed through for active serving users which meant
+      // veterans couldn't see their DB pension in the retirement timeline.
+      existingDbPension: existingDbPension,
       existingIsaPot, existingSippPot, statePensionAge, statePension, contribution, retirementAge, returnRate, inflationRate, targetIncome, salSacrifice, flatRateExpenses, manualTaxablePay, propertyValue, mortgageBalance, mortgageRate, mortgageTermYears, monthlyMortgage, cashReserve, monthlyExpenses,
       isServing: !!form.isServing
     }));
@@ -1811,7 +1824,30 @@ function App() {
                   <label htmlFor="leaveAge">Expected Age When Leaving MOD <span className="label-hint">(for AFPS 15)</span></label>
                   <InfoHint>Leave blank to assume you serve until retirement. AFPS 15 contributions stop at this age.</InfoHint>
                 </div>
-                <input id="leaveAge" className="bare-input" name="leaveAge" type="number" placeholder={form.retirementAge || '60'} min="18" max="75" value={form.leaveAge} onChange={handleChange} />
+                <input
+                  id="leaveAge"
+                  className={`bare-input ${form.leaveAge && form.age && parseInt(form.leaveAge) <= parseInt(form.age) ? 'input-invalid' : ''}`}
+                  name="leaveAge"
+                  type="number"
+                  placeholder={form.retirementAge || '60'}
+                  min={form.age ? (parseInt(form.age) ) : 18}
+                  max="75"
+                  value={form.leaveAge}
+                  onChange={handleChange}
+                />
+                {/* Inline validation/help text:
+                    - If user enters a leave age <= current age, treat as "already left" and inform them.
+                    - For a future leave, recommend entering at least age+1. */}
+                {form.leaveAge && form.age && parseInt(form.leaveAge) <= parseInt(form.age) && (
+                  <div className="input-note" style={{ color: '#92400e', marginTop: '0.5rem' }}>
+                    You've entered a leave age at or before your current age — the app will treat this as "already left". To indicate a future leave, enter an age of at least {parseInt(form.age) + 1}.
+                  </div>
+                )}
+                {form.age && (!form.leaveAge || (parseInt(form.leaveAge) > parseInt(form.age))) && (
+                  <div className="input-note" style={{ color: '#6b7280', marginTop: '0.5rem' }}>
+                    Tip: to indicate a future leave, enter an age of at least {parseInt(form.age) + 1} (input min set to your current age).
+                  </div>
+                )}
               </div>
             )}
             {form.isServing && (
@@ -2275,6 +2311,11 @@ function App() {
             {results.taxSummary.taxInfo.note && (
               <div className="tax-code-info">
                 <span>🏷️ Tax code: {results.taxSummary.taxInfo.note}</span>
+                {typeof results.taxSummary.effectivePA === 'number' && typeof results.taxSummary.taxInfo.pa === 'number' && results.taxSummary.effectivePA < results.taxSummary.taxInfo.pa && (
+                  <div style={{ marginTop: '0.5rem', color: '#92400e' }}>
+                    Note: your personal allowance has been reduced due to your income (tapered from {fmtGBP(results.taxSummary.taxInfo.pa)} to {fmtGBP(results.taxSummary.effectivePA)}).
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -2416,6 +2457,13 @@ function App() {
                     <span className="ts-label">Added Pension (commuted)</span>
                     <span className="ts-value">{fmtGBP(results.netWorth.apOptPot, 0)}</span>
                     <span className="ts-sub">DB value — not a pot you can access</span>
+                  </div>
+                )}
+                {results.netWorth.dbOptPot > 0 && (
+                  <div className="tax-summary-item">
+                    <span className="ts-label">DB Pension (commuted)</span>
+                    <span className="ts-value">{fmtGBP(results.netWorth.dbOptPot, 0)}</span>
+                    <span className="ts-sub">Estimated capital equivalent (×25)</span>
                   </div>
                 )}
                 {results.netWorth.propertyEquityAtRetirement > 0 && (
