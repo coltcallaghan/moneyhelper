@@ -967,8 +967,6 @@ function RetirementTimelineChart({ results, form }) {
   const chartIsaPct  = Math.round(((phase2?.isa || 0) / totalContrib) * 100);
 
     // Now compute label positions including retirePossibleAge to avoid overlapping bottoms
-    const allVerticalMarkers = [targetRetAge, 57, statePensionAge, retirePossibleAge].filter(v => typeof v === 'number' && !isNaN(v));
-    
 
   return (
     <div className="chart-card">
@@ -1194,8 +1192,6 @@ function TotalWealthChart({ results, form }) {
   const accessibleAtTarget = potAtTargetRow ? (potAtTargetRow['ISA Pot'] + (targetRetAge >= 57 ? potAtTargetRow['SIPP Pot'] : 0)) : 0;
 
   // Compute label positions for vertical markers on this chart to avoid overlap
-  const verticalMarkersWealth = [targetRetAge, fireAge, 57].filter(v => typeof v === 'number' && !isNaN(v));
-  
 
   return (
     <div className="chart-card">
