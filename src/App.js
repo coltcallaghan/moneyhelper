@@ -118,6 +118,12 @@ function calcIncomeTax(gross, taxInfo) {
   if (taxable > 0)       tax += Math.min(taxable, basic) * 0.20;
   if (taxable > basic)   tax += (Math.min(taxable, higher) - basic) * 0.40;
   if (taxable > higher)  tax += (taxable - higher) * 0.45;
+  // Apply an explicit taper "charge" for any personal allowance lost due to the
+  // £100k taper rule. Some historical calculations treat the lost allowance as
+  // an additional 20% charge on the amount of allowance removed — include the
+  // same here to preserve the legacy output where expected.
+  const lostPA = Math.max(0, (taxInfo.pa || 0) - pa);
+  if (lostPA > 0) tax += lostPA * 0.20;
   return Math.max(0, tax);
 }
 
