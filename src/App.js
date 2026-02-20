@@ -231,6 +231,35 @@ function calcMixScenarios(contribution, years, returnRate, taxRate) {
   return { scenarios, bestIdx, sippMaxForPA };
 }
 
+// Utility: compute label positions for vertical chart markers to avoid overlapping
+function computeLabelPositions(markers, threshold = 2) {
+  const nums = Array.from(new Set((markers || []).filter(Boolean).map(Number))).sort((a, b) => a - b);
+  const groups = [];
+  let cur = [];
+  for (const m of nums) {
+    if (cur.length === 0) { cur.push(m); continue; }
+    const last = cur[cur.length - 1];
+    if (m - last <= threshold) cur.push(m);
+    else { groups.push(cur); cur = [m]; }
+  }
+  if (cur.length) groups.push(cur);
+  const map = {};
+  for (const g of groups) {
+    if (g.length === 1) { map[g[0]] = 'insideTop'; continue; }
+    if (g.length === 2) {
+      map[g[0]] = 'insideTop';
+      map[g[1]] = 'insideBottom';
+      continue;
+    }
+    // For groups of 3 or more, place the middle marker at the bottom and others at top
+    const mid = Math.floor(g.length / 2);
+    for (let i = 0; i < g.length; i++) {
+      map[g[i]] = (i === mid) ? 'insideBottom' : 'insideTop';
+    }
+  }
+  return map;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // CORE CALCULATION ENGINE
 // ─────────────────────────────────────────────────────────────────────────────
@@ -470,7 +499,30 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
   });
 
   // ── Recommendation ──────────────────────────────────────────────────────────
-  const best = options[0];
+  // Choose best option. If early retirement is a goal (retirementAge < SPA or < SIPP unlock),
+  // prefer the option that produces the highest immediate income at target retirement age
+  // (this tends to minimise FIRE age). Otherwise fall back to efficiency ranking.
+  const retireAge = retirementAge || 60;
+  options.forEach(o => {
+    if (o.id === 'isa') {
+      o.earlyInc = (o.potAtRetirement || 0) * 0.04;
+    } else if (o.id === 'sipp') {
+      o.earlyInc = (retireAge >= 57) ? (o.annualIncomeAtRetirement || 0) : 0;
+    } else if (o.id === 'addedpension') {
+      o.earlyInc = (retireAge >= statePensionAge) ? (o.annualIncomeAtRetirement || 0) : 0;
+    } else {
+      o.earlyInc = 0;
+    }
+  });
+
+  let best = options[0];
+  // If retirement target is before SPA, pick option maximizing early income (ISA/SIPP)
+  if (retireAge < statePensionAge || retireAge < 57) {
+    const byEarly = options.reduce((b, o) => (o.earlyInc > (b.earlyInc || 0) ? o : b), options[0]);
+    best = byEarly;
+  } else {
+    best = options[0];
+  }
   let recReason = '';
   if (best.id === 'addedpension') {
     if (edpEligible)
@@ -506,6 +558,20 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
   const cashAtRetirement = cashReserve; // kept at nominal (inflation erodes it)
   // FIRE number (4% rule) if user provided a target income
   const fireNumber = (targetIncome && targetIncome > 0) ? targetIncome * 25 : 0;
+
+  // If your target retirement is before SIPP access and your current accessible
+  // pot at that age falls short of FIRE, check whether investing everything
+  // into an ISA instead would hit the FIRE number by your target. If so,
+  // prioritise ISA in the recommendation (user can bridge SIPP -> ISA before target).
+  const isaOnlyAtRetire = isaPotAllIn || 0; // all contribution into ISA
+  const accessibleAtRetireCurrent = (retireAge >= 57) ? (isaOptPot + sippOptPot) : isaOptPot;
+  if (fireNumber > 0 && retireAge < 57 && accessibleAtRetireCurrent < fireNumber && isaOnlyAtRetire >= fireNumber) {
+    const isaOption = options.find(o => o.id === 'isa');
+    if (isaOption) {
+      best = isaOption;
+      recReason = `If you prioritise ISAs (investing your ${fmtGBP(contribution)}/yr into an ISA instead of a SIPP) you would reach your FIRE target by age ${retireAge} — consider prioritising ISA to make retirement at ${retireAge} possible.`;
+    }
+  }
 
   // Tax summary helpers
   const effectivePA = getEffectivePA(taxBasis, taxInfo.pa);
@@ -827,6 +893,31 @@ function RetirementTimelineChart({ results, form }) {
   let isaPotAcc  = existingIsa;
   let sippPotAcc = existingSipp;
 
+  // Compute label positions for vertical markers to avoid overlap.
+  // Group nearby markers (within `threshold` years) and alternate label positions
+  // insideTop / insideBottom within each group.
+  const computeLabelPositions = (markers, threshold = 2) => {
+    const nums = Array.from(new Set(markers.filter(Boolean).map(Number))).sort((a, b) => a - b);
+    const groups = [];
+    let cur = [];
+    for (const m of nums) {
+      if (cur.length === 0) { cur.push(m); continue; }
+      const last = cur[cur.length - 1];
+      if (m - last <= threshold) cur.push(m);
+      else { groups.push(cur); cur = [m]; }
+    }
+    if (cur.length) groups.push(cur);
+    const map = {};
+    for (const g of groups) {
+      if (g.length === 1) { map[g[0]] = 'insideTop'; continue; }
+      for (let i = 0; i < g.length; i++) {
+        map[g[i]] = (i % 2 === 0) ? 'insideTop' : 'insideBottom';
+      }
+    }
+    return map;
+  };
+  // (label positions will be computed after retirePossibleAge is known)
+
   for (let R = currentAge + 1; R <= maxAge; R++) {
     const alloc = getAllocForAge(R - 1); // contributions made during the year ending at age R
 
@@ -874,6 +965,11 @@ function RetirementTimelineChart({ results, form }) {
   const phase2 = phaseAllocs.length > 1 ? phaseAllocs[phaseAllocs.length - 1] : phaseAllocs[0];
   const chartSippPct = Math.round(((phase2?.sippNet || 0) / totalContrib) * 100);
   const chartIsaPct  = Math.round(((phase2?.isa || 0) / totalContrib) * 100);
+
+    // Now compute label positions including retirePossibleAge to avoid overlapping bottoms
+    const allVerticalMarkers = [targetRetAge, 57, statePensionAge, retirePossibleAge].filter(v => typeof v === 'number' && !isNaN(v));
+    const labelPosMap = computeLabelPositions(allVerticalMarkers, 2);
+    const pickLabelPos = (x) => labelPosMap[Number(x)] || 'insideTop';
 
   return (
     <div className="chart-card">
@@ -925,6 +1021,8 @@ function RetirementTimelineChart({ results, form }) {
             tickLine={false}
             label={{ value: 'Age', position: 'insideBottomRight', offset: -4, fill: '#64748b', fontSize: 12 }}
           />
+
+          {/* (labels for vertical markers are rendered once below) */}
           <YAxis
             stroke="#475569"
             tick={{ fill: '#64748b', fontSize: 12 }}
@@ -948,6 +1046,32 @@ function RetirementTimelineChart({ results, form }) {
             }}
           />
 
+          {/* Reference lines: target retirement age, SIPP unlock age (57), and State Pension Age */}
+          {/* Build marker list and dedupe identical ages by priority: retirePossibleAge > targetRetAge > SIPP (57) > SPA */}
+          {(() => {
+            const raw = [];
+            raw.push({ age: targetRetAge, key: 'target', label: `Target ${targetRetAge}`, color: '#60a5fa' });
+            raw.push({ age: 57, key: 'sipp', label: `SIPP ${57}`, color: '#a78bfa' });
+            raw.push({ age: statePensionAge, key: 'spa', label: `SPA ${statePensionAge}`, color: '#f59e0b' });
+            if (retirePossibleAge) raw.push({ age: retirePossibleAge, key: 'retire', label: `Retire ${retirePossibleAge}`, color: '#22d3ee' });
+
+            const priority = { retire: 1, target: 2, sipp: 3, spa: 4 };
+            const byAge = {};
+            for (const m of raw) {
+              if (!byAge[m.age]) byAge[m.age] = m;
+              else {
+                const cur = byAge[m.age];
+                if ((priority[m.key] || 99) < (priority[cur.key] || 99)) byAge[m.age] = m;
+              }
+            }
+            const deduped = Object.values(byAge).sort((a, b) => a.age - b.age);
+            // compute label positions for deduped markers
+            const posMap = computeLabelPositions(deduped.map(d => d.age), 2);
+            return deduped.map(d => (
+              <ReferenceLine key={`m-${d.key}`} x={d.age} stroke={d.color} strokeDasharray="3 3" label={{ value: d.label, position: posMap[d.age] || 'insideTop', fill: d.color, fontSize: 12 }} />
+            ));
+          })()}
+
           {dbPension > 0 && (
             <Area type="monotone" dataKey="DB Pension"    stackId="1" stroke="#10b981" fill="url(#gradDB)"   strokeWidth={1.5} />
           )}
@@ -969,15 +1093,7 @@ function RetirementTimelineChart({ results, form }) {
               label={{ value: `Target: ${fmtGBP(targetIncome, 0)}/yr`, position: 'insideTopLeft', fill: '#e2e8f0', fontSize: 11 }}
             />
           )}
-          {retirePossibleAge && (
-            <ReferenceLine
-              x={retirePossibleAge}
-              stroke="#22d3ee"
-              strokeDasharray="4 3"
-              strokeWidth={2}
-              label={{ value: `Age ${retirePossibleAge}`, position: 'insideTop', fill: '#22d3ee', fontSize: 11 }}
-            />
-          )}
+          {/* retirePossibleAge is handled by the deduped markers above */}
         </AreaChart>
       </ResponsiveContainer>
 
@@ -991,7 +1107,6 @@ function RetirementTimelineChart({ results, form }) {
         {targetIncome > 0 && <span className="chart-key-item" style={{ color: '#e2e8f0' }}>— Target income <span className="chart-key-note">({fmtGBP(targetIncome, 0)}/yr)</span></span>}
         {retirePossibleAge && <span className="chart-key-item" style={{ color: '#22d3ee' }}>| Earliest retirement <span className="chart-key-note">(age {retirePossibleAge})</span></span>}
       </div>
-
       {retirePossibleAge && (
         <div className="chart-retire-callout">
           <span className="chart-retire-emoji">🎯</span>
@@ -1057,9 +1172,10 @@ function TotalWealthChart({ results, form }) {
 
     const isaPot  = Math.round(isaPotAcc);
     const sippPot = Math.round(sippPotAcc);
-    const total   = isaPot + sippPot;
+    // Only count SIPP towards an early-FIRE pot once it's actually accessible (age 57+)
+    const accessibleTotal = isaPot + (R >= 57 ? sippPot : 0);
 
-    if (fireNumber > 0 && fireAge === null && total >= fireNumber) fireAge = R;
+    if (fireNumber > 0 && fireAge === null && accessibleTotal >= fireNumber) fireAge = R;
 
     wealthData.push({ age: R, 'ISA Pot': isaPot, 'SIPP Pot': sippPot });
   }
@@ -1072,6 +1188,16 @@ function TotalWealthChart({ results, form }) {
   const peakTotal   = wealthData.length > 0
     ? wealthData[wealthData.length - 1]['ISA Pot'] + wealthData[wealthData.length - 1]['SIPP Pot']
     : 0;
+
+  // Determine pots at the user's target retirement age to explain accessibility
+  const potAtTargetRow = wealthData.find(d => d.age === targetRetAge) || null;
+  const potAtTargetTotal = potAtTargetRow ? (potAtTargetRow['ISA Pot'] + potAtTargetRow['SIPP Pot']) : 0;
+  const accessibleAtTarget = potAtTargetRow ? (potAtTargetRow['ISA Pot'] + (targetRetAge >= 57 ? potAtTargetRow['SIPP Pot'] : 0)) : 0;
+
+  // Compute label positions for vertical markers on this chart to avoid overlap
+  const verticalMarkersWealth = [targetRetAge, fireAge, 57].filter(v => typeof v === 'number' && !isNaN(v));
+  const labelPosMapWealth = computeLabelPositions(verticalMarkersWealth, 2);
+  const pickLabelPosWealth = (x) => labelPosMapWealth[Number(x)] || 'insideTop';
 
   return (
     <div className="chart-card">
@@ -1132,31 +1258,43 @@ function TotalWealthChart({ results, form }) {
           <Area type="monotone" dataKey="ISA Pot"  stackId="1" stroke="#3b82f6" fill="url(#wgradISA)"  strokeWidth={1.5} />
           <Area type="monotone" dataKey="SIPP Pot" stackId="1" stroke="#8b5cf6" fill="url(#wgradSIPP)" strokeWidth={1.5} />
 
-          {fireNumber > 0 && (
-            <ReferenceLine
-              y={fireNumber}
-              stroke="#f59e0b"
-              strokeDasharray="6 4"
-              strokeWidth={2}
-              label={{ value: `FIRE: ${fmtGBP(fireNumber, 0)}`, position: 'insideTopLeft', fill: '#f59e0b', fontSize: 11 }}
-            />
-          )}
-          <ReferenceLine
-            x={targetRetAge}
-            stroke="#22d3ee"
-            strokeDasharray="4 3"
-            strokeWidth={2}
-            label={{ value: `Retire ${targetRetAge}`, position: 'insideTop', fill: '#22d3ee', fontSize: 11 }}
-          />
-          {fireAge && fireAge !== targetRetAge && (
-            <ReferenceLine
-              x={fireAge}
-              stroke="#f97316"
-              strokeDasharray="4 3"
-              strokeWidth={2}
-              label={{ value: `FIRE ${fireAge}`, position: 'insideTopRight', fill: '#f97316', fontSize: 11 }}
-            />
-          )}
+          {(() => {
+            // Markers considered on the wealth chart: target retirement age, SIPP unlock (57), SPA, and FIRE age.
+            // If multiple markers share the same age, keep the most informative one by priority: FIRE > target > SIPP (57) > SPA
+            const raw = [];
+            if (fireNumber > 0 && typeof fireNumber === 'number') raw.push({ age: 'yref', y: fireNumber, key: 'fireline', isY: true, label: `FIRE: ${fmtGBP(fireNumber, 0)}`, color: '#f59e0b' });
+            raw.push({ age: targetRetAge, key: 'target', label: `Retire ${targetRetAge}`, color: '#22d3ee' });
+            raw.push({ age: 57, key: 'sipp', label: `SIPP ${57}`, color: '#a78bfa' });
+            raw.push({ age: results.statePensionAge || 0, key: 'spa', label: `SPA ${results.statePensionAge || 0}`, color: '#f59e0b' });
+
+            // Separate horizontal (y) markers from vertical (x) markers
+            const yMarkers = raw.filter(r => r.isY);
+            const vRaw = raw.filter(r => !r.isY && typeof r.age === 'number' && !isNaN(r.age));
+
+            // Dedupe vertical markers by age with priority
+            const priority = { fireline: 1, target: 2, sipp: 3, spa: 4 };
+            const byAge = {};
+            for (const m of vRaw) {
+              if (!byAge[m.age]) byAge[m.age] = m;
+              else {
+                const cur = byAge[m.age];
+                if ((priority[m.key] || 99) < (priority[cur.key] || 99)) byAge[m.age] = m;
+              }
+            }
+            const deduped = Object.values(byAge).sort((a, b) => a.age - b.age);
+            const posMap = computeLabelPositions(deduped.map(d => d.age), 2);
+
+            return (
+              <>
+                {yMarkers.map(y => (
+                  <ReferenceLine key={y.key} y={y.y} stroke={y.color} strokeDasharray="6 4" strokeWidth={2} label={{ value: y.label, position: 'insideTopLeft', fill: y.color, fontSize: 11 }} />
+                ))}
+                {deduped.map(d => (
+                  <ReferenceLine key={`m-${d.key}`} x={d.age} stroke={d.color} strokeDasharray="4 3" strokeWidth={2} label={{ value: d.label, position: posMap[d.age] || 'insideTop', fill: d.color, fontSize: 11 }} />
+                ))}
+              </>
+            );
+          })()}
         </AreaChart>
       </ResponsiveContainer>
 
@@ -1169,6 +1307,21 @@ function TotalWealthChart({ results, form }) {
         {fireAge && fireAge !== targetRetAge && <span className="chart-key-item" style={{ color: '#f97316' }}>| FIRE age <span className="chart-key-note">(age {fireAge} — pot hits FIRE number)</span></span>}
       </div>
 
+      {/* Explain when total pot exceeds FIRE but SIPP is locked at target age */}
+      {(fireNumber > 0 && potAtTargetTotal >= fireNumber && accessibleAtTarget < fireNumber) && (
+        <div className="chart-retire-callout chart-retire-warning" style={{ borderColor: '#f59e0b' }}>
+          <span className="chart-retire-emoji">⚠️</span>
+          <div>
+            <strong>Your total pot meets the FIRE number, but most is in a SIPP.</strong>
+            <div style={{ marginTop: '0.25rem' }}>
+              At age {targetRetAge} your accessible pot is {fmtGBP(accessibleAtTarget, 0)} — {fmtGBP(Math.max(0, fireNumber - accessibleAtTarget), 0)} short of the {fmtGBP(fireNumber, 0)} FIRE target.
+              SIPP funds are locked until age 57, so you can only use ISA (and any DB/EDP) to bridge the gap.
+            </div>
+            <div style={{ marginTop: '0.25rem' }}>Options: increase ISA savings, delay retirement, or plan a SIPP/ISA bridge.</div>
+          </div>
+        </div>
+      )}
+
       {fireAge && (
         <div className="chart-retire-callout">
           <span className="chart-retire-emoji">🔥</span>
@@ -1177,6 +1330,9 @@ function TotalWealthChart({ results, form }) {
             {fireAge < targetRetAge
               ? ` — ${targetRetAge - fireAge} year${targetRetAge - fireAge !== 1 ? 's' : ''} before your target retirement age. You could retire early!`
               : ` — ${fireAge - targetRetAge} year${fireAge - targetRetAge !== 1 ? 's' : ''} after your target retirement age.`}
+              {fireAge < 57 && (
+                <div className="chart-retire-warning" style={{ marginTop: '0.25rem' }}>⚠️ Before age 57 your SIPP is inaccessible — withdrawals before then come from your ISA pot only.</div>
+              )}
           </div>
         </div>
       )}
@@ -1275,6 +1431,83 @@ function RetirementPictureCard({ results, isServing }) {
     (apOpt?.edpEligible && edpLump > 0) && { label: 'EDP Tax-Free Lump Sum', value: edpLump, color: '#10b981', note: '2.25\u00d7 added pension — zero tax', icon: '\uD83C\uDFC6' },
   ].filter(Boolean);
 
+  // Build staged income sections depending on retirement, SIPP unlock (57) and SPA
+  const stages = [];
+  const sippUnlock = 57;
+  const spa = statePensionAge;
+
+  if (retirementAge < sippUnlock && sippUnlock < spa) {
+    // Three stages: retirement->56, 57->(spa-1), spa->
+    const stage1End = Math.min(sippUnlock - 1, spa - 1);
+    const stage2Start = sippUnlock;
+    const stage2End = Math.max(sippUnlock, spa - 1);
+
+    const stage1Income = {
+      label: `Age ${retirementAge}–${stage1End}`,
+      note: 'Only ISA, SIPP (locked) and EDP (if eligible) — early retirement phase',
+      total: isaAnnual + (apOpt?.edpEligible ? edpAnnual : 0),
+      sources: [
+        isaAnnual > 0 && { label: 'ISA Drawdown (4%/yr)', annual: isaAnnual, color: '#3b82f6', icon: '\uD83D\uDCB0' },
+        (apOpt?.edpEligible && edpAnnual > 0) && { label: 'EDP Annual Income', annual: edpAnnual, color: '#6ee7b7', icon: '\uD83C\uDFC6' },
+      ].filter(Boolean),
+    };
+
+    const stage2Income = {
+      label: `Age ${stage2Start}–${Math.max(stage2End, stage2Start)}`,
+      note: 'SIPP unlocked — ISA + SIPP + EDP available',
+      total: isaAnnual + sippAnnual + (apOpt?.edpEligible ? edpAnnual : 0),
+      sources: [
+        isaAnnual > 0 && { label: 'ISA Drawdown (4%/yr)', annual: isaAnnual, color: '#3b82f6', icon: '\uD83D\uDCB0' },
+        sippAnnual > 0 && { label: 'SIPP Drawdown (4% of 75%)', annual: sippAnnual, color: '#a78bfa', icon: '\uD83C\uDFE6' },
+        (apOpt?.edpEligible && edpAnnual > 0) && { label: 'EDP Annual Income', annual: edpAnnual, color: '#6ee7b7', icon: '\uD83C\uDFC6' },
+      ].filter(Boolean),
+    };
+
+    const stage3Income = {
+      label: `Age ${spa}+`,
+      note: 'All income sources (DB, Added Pension, State Pension) available',
+      total: fullTotal,
+      sources: [
+        dbAnnual > 0 && { label: 'AFPS 15 DB Pension', annual: dbAnnual, color: '#10b981', icon: '\uD83C\uDF96\uFE0F' },
+        (isServing && apAnnualFull > 0) && { label: 'AFPS 15 Added Pension', annual: apAnnualFull, color: '#34d399', icon: '\u2795' },
+        isaAnnual > 0 && { label: 'ISA Drawdown (4%/yr)', annual: isaAnnual, color: '#3b82f6', icon: '\uD83D\uDCB0' },
+        sippAnnual > 0 && { label: 'SIPP Drawdown (4% of 75%)', annual: sippAnnual, color: '#a78bfa', icon: '\uD83C\uDFE6' },
+        statePension > 0 && { label: 'State Pension', annual: statePension, color: '#f59e0b', icon: '\uD83C\uDFDB\uFE0F' },
+      ].filter(Boolean),
+    };
+
+    stages.push(stage1Income, stage2Income, stage3Income);
+  } else if (retirementAge < spa && retirementAge < sippUnlock) {
+    // retirement < SPA but SPA <= SIPP unlock => two stages: retirement->(spa-1), spa+
+    const stage1Income = {
+      label: `Age ${retirementAge}–${spa - 1}`,
+      note: 'Pre-SPA income (SIPP may be locked)',
+      total: isaAnnual + (apOpt?.edpEligible ? edpAnnual : 0) + (retirementAge >= 57 ? sippAnnual : 0),
+      sources: [
+        isaAnnual > 0 && { label: 'ISA Drawdown (4%/yr)', annual: isaAnnual, color: '#3b82f6', icon: '\uD83D\uDCB0' },
+        (retirementAge >= 57 && sippAnnual > 0) && { label: 'SIPP Drawdown (4% of 75%)', annual: sippAnnual, color: '#a78bfa', icon: '\uD83C\uDFE6' },
+        (apOpt?.edpEligible && edpAnnual > 0) && { label: 'EDP Annual Income', annual: edpAnnual, color: '#6ee7b7', icon: '\uD83C\uDFC6' },
+      ].filter(Boolean),
+    };
+    const stage2Income = {
+      label: `Age ${spa}+`, note: 'All sources', total: fullTotal, sources: [].filter(Boolean),
+    };
+    stages.push(stage1Income, stage2Income);
+  } else if (retirementAge >= spa) {
+    // retirement at or after SPA — single stage
+    stages.push({ label: `Age ${retirementAge}+`, note: 'All sources available', total: fullTotal, sources: [
+      dbAnnual > 0 && { label: 'AFPS 15 DB Pension', annual: dbAnnual, color: '#10b981', icon: '\uD83C\uDF96\uFE0F' },
+      (isServing && apAnnualFull > 0) && { label: 'AFPS 15 Added Pension', annual: apAnnualFull, color: '#34d399', icon: '\u2795' },
+      isaAnnual > 0 && { label: 'ISA Drawdown (4%/yr)', annual: isaAnnual, color: '#3b82f6', icon: '\uD83D\uDCB0' },
+      sippAnnual > 0 && { label: 'SIPP Drawdown (4% of 75%)', annual: sippAnnual, color: '#a78bfa', icon: '\uD83C\uDFE6' },
+      statePension > 0 && { label: 'State Pension', annual: statePension, color: '#f59e0b', icon: '\uD83C\uDFDB\uFE0F' },
+    ].filter(Boolean) });
+  } else {
+    // fallback: retirement < SPA but SIPP unlock <= retirementAge
+    stages.push({ label: `Age ${retirementAge}–${spa - 1}`, note: 'Pre-SPA', total: earlyTotal, sources: earlySources });
+    stages.push({ label: `Age ${spa}+`, note: 'All sources', total: fullTotal, sources: deferredSources.concat(earlySources) });
+  }
+
   const renderSourceRow = (s, i) => (
     <div key={i} className="rp-source-row">
       <span className="rp-source-icon">{s.icon}</span>
@@ -1296,72 +1529,31 @@ function RetirementPictureCard({ results, isServing }) {
         </div>
       </div>
 
-      {!hasDeferredIncome ? (
-        /* Retirement age >= SPA: everything accessible at once */
-        <div className="rp-sources">
-          <p className="rp-phase-label">📅 From age {retirementAge} — all income accessible</p>
-          {allSources.length === 0 && (
-            <p className="rp-empty">Fill in the inputs above to see your full retirement picture.</p>
-          )}
-          {allSources.map(renderSourceRow)}
-          {fullTotal > 0 && (
-            <div className="rp-total-row">
-              <span className="rp-total-label">Σ Total Annual Income</span>
-              <span className="rp-total-value">{fmtGBP(fullTotal, 0)}/yr</span>
-            </div>
-          )}
-        </div>
-      ) : (
-        /* Retirement age < SPA: show two phases */
-        <>
-          <div className="rp-sources">
-            <p className="rp-phase-label">📅 Phase 1: Age {retirementAge}–{statePensionAge - 1} — early retirement</p>
-            <p className="rp-phase-note">Only ISA, SIPP, and EDP income available before state pension age</p>
-            {earlySources.length === 0 && (
-              <p className="rp-empty">No income sources available at age {retirementAge}. Consider ISA/SIPP contributions.</p>
+      {/* Render 1-3 staged income sections computed above */}
+      <div className="rp-sources">
+        {stages.length === 0 && (
+          <p className="rp-empty">Fill in the inputs above to see your retirement picture.</p>
+        )}
+        {stages.map((st, idx) => (
+          <div key={`stage-${idx}`} className={idx === stages.length - 1 ? 'rp-stage rp-stage-final' : 'rp-stage'}>
+            <p className="rp-phase-label">{idx === 0 ? '📅 Phase 1:' : idx === 1 ? '📅 Phase 2:' : '📅 Phase 3:'} {st.label}</p>
+            {st.note && <p className="rp-phase-note">{st.note}</p>}
+            {(!st.sources || st.sources.length === 0) && (
+              <p className="rp-empty">No income sources in this phase.</p>
             )}
-            {earlySources.map(renderSourceRow)}
-            {earlyTotal > 0 && (
+            {st.sources && st.sources.map(renderSourceRow)}
+            {st.total > 0 && (
               <div className="rp-total-row">
-                <span className="rp-total-label">Σ Income age {retirementAge}–{statePensionAge - 1}</span>
-                <span className="rp-total-value">{fmtGBP(earlyTotal, 0)}/yr</span>
+                <span className="rp-total-label">Σ {st.label.includes('+') ? 'Total from' : 'Income'} {st.label}</span>
+                <span className="rp-total-value">{fmtGBP(st.total, 0)}/yr</span>
               </div>
             )}
+            {idx === stages.length - 1 && st.note && (
+              <div className="rp-warning" style={{ marginTop: '0.5rem', color: '#92400e' }}>{st.note}</div>
+            )}
           </div>
-
-          <div className="rp-sources rp-phase-full">
-            <p className="rp-phase-label">📅 Phase 2: From age {statePensionAge} — full income unlocked</p>
-            <p className="rp-phase-note">DB pension, Added Pension, and State Pension all become accessible</p>
-            {deferredSources.map((s, i) => (
-              <div key={`def-${i}`} className="rp-source-row rp-source-new">
-                <span className="rp-source-icon">{s.icon}</span>
-                <div className="rp-source-info">
-                  <span className="rp-source-label">{s.label}</span>
-                  <span className="rp-source-note">Unlocks at age {statePensionAge} — guaranteed, CPI-linked</span>
-                </div>
-                <span className="rp-source-value" style={{ color: s.color }}>+{fmtGBP(s.annual, 0)}/yr</span>
-              </div>
-            ))}
-            <div className="rp-warning" style={{ marginTop: '0.5rem', color: '#92400e' }}>
-              ⚠️ Remember: Added Pension may not be available at your chosen retirement age — it only starts at state pension age.
-            </div>
-            {earlySources.map((s, i) => (
-              <div key={`cont-${i}`} className="rp-source-row rp-source-continued">
-                <span className="rp-source-icon">{s.icon}</span>
-                <div className="rp-source-info">
-                  <span className="rp-source-label">{s.label}</span>
-                  <span className="rp-source-note">Continues from phase 1</span>
-                </div>
-                <span className="rp-source-value" style={{ color: s.color, opacity: 0.6 }}>{fmtGBP(s.annual, 0)}/yr</span>
-              </div>
-            ))}
-            <div className="rp-total-row rp-total-full">
-              <span className="rp-total-label">Σ Total from age {statePensionAge}</span>
-              <span className="rp-total-value">{fmtGBP(fullTotal, 0)}/yr</span>
-            </div>
-          </div>
-        </>
-      )}
+        ))}
+      </div>
 
       {oneOffs.length > 0 && (
         <div className="rp-oneoffs">
