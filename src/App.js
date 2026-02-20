@@ -1710,10 +1710,24 @@ function App() {
 
   const handleChange = (e) => {
     const { name, type, value, checked } = e.target;
-    setForm(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }));
+    setForm(prev => {
+      const next = {
+        ...prev,
+        [name]: type === 'checkbox' ? checked : value,
+        ...(name === 'isServing' && !checked ? { leaveAge: '' } : {})
+      };
+      // If the user changed their age while serving and leaveAge is empty or
+      // previously <= prior age, auto-set leaveAge to age+1 to keep sensible defaults.
+      if (name === 'age' && prev.isServing) {
+        const newAge = parseInt(value) || 0;
+        const prevLeave = parseInt(prev.leaveAge);
+        const prevAge = parseInt(prev.age) || 0;
+        if (!prev.leaveAge || (!isNaN(prevLeave) && prevLeave <= prevAge)) {
+          next.leaveAge = String(Math.max(newAge + 1, prevAge + 1));
+        }
+      }
+      return next;
+    });
     if (errors[name]) {
       setErrors(prev => {
         const next = { ...prev };
@@ -1740,6 +1754,18 @@ function App() {
         try { el.classList.remove('input-invalid'); } catch {}
       }
     });
+    // Additional validation: if serving, leaveAge must be greater than current age
+    try {
+      if (form.isServing) {
+        const curAge = parseInt(form.age) || 0;
+        const la = parseInt(form.leaveAge);
+        if (isNaN(la) || la <= curAge) {
+          nextErrors.leaveAge = true;
+          const el = elForm.querySelector('[name="leaveAge"]');
+          if (el) el.classList.add('input-invalid');
+        }
+      }
+    } catch (err) {}
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors);
       const firstName = Object.keys(nextErrors)[0];
@@ -1966,8 +1992,10 @@ function App() {
             <div className="form-group">
               <label htmlFor="age">Age<span className="required-star">*</span></label>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <input id="age" name="age" type="range" min="18" max="75" step="1" value={form.age || 35} onChange={handleChange} />
-                <span style={{ minWidth: '3.5rem', textAlign: 'right' }}>{form.age || 35} yrs</span>
+                <div className="input-wrap" style={{ width: '100%' }}>
+                  <input id="age" name="age" type="number" min="18" max="75" step="1" value={form.age || 35} onChange={handleChange} required />
+                  <span className="input-suffix">yrs</span>
+                </div>
               </div>
             </div>
             {form.isServing && (
@@ -2086,19 +2114,22 @@ function App() {
                   <InfoHint>Leave blank to assume you serve until retirement. AFPS 15 contributions stop at this age.</InfoHint>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                  <input
-                    id="leaveAge"
-                    className={`${form.leaveAge && form.age && parseInt(form.leaveAge) <= parseInt(form.age) ? 'input-invalid' : ''}`}
-                    name="leaveAge"
-                    type="range"
-                    placeholder={form.retirementAge || '60'}
-                    min={form.age ? (parseInt(form.age) ) : 18}
-                    max="75"
-                    step="1"
-                    value={form.leaveAge || (parseInt(form.age) + 1) || 30}
-                    onChange={handleChange}
-                  />
-                  <span style={{ minWidth: '3.5rem', textAlign: 'right' }}>{form.leaveAge || (parseInt(form.age) + 1) || ''} yrs</span>
+                  <div className="input-wrap" style={{ width: '100%' }}>
+                    <input
+                      id="leaveAge"
+                      className={`${form.leaveAge && form.age && parseInt(form.leaveAge) <= parseInt(form.age) ? 'input-invalid' : ''}`}
+                      name="leaveAge"
+                      type="number"
+                      placeholder={form.retirementAge || '60'}
+                      min={form.age ? (parseInt(form.age) ) : 18}
+                      max="75"
+                      step="1"
+                      value={form.leaveAge || (parseInt(form.age) + 1) || 30}
+                      onChange={handleChange}
+                      required={form.isServing}
+                    />
+                    <span className="input-suffix">yrs</span>
+                  </div>
                 </div>
                 {/* Inline validation/help text:
                     - If user enters a leave age <= current age, treat as "already left" and inform them.
@@ -2373,8 +2404,10 @@ function App() {
             <div className="form-group">
               <label htmlFor="retirementAge">Target Retirement Age<span className="required-star">*</span></label>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <input id="retirementAge" name="retirementAge" type="range" min="40" max="75" step="1" value={form.retirementAge || 60} onChange={handleChange} required />
-                <span style={{ minWidth: '3.5rem', textAlign: 'right' }}>{form.retirementAge || 60} yrs</span>
+                <div className="input-wrap" style={{ width: '100%' }}>
+                  <input id="retirementAge" name="retirementAge" type="number" min="40" max="75" step="1" value={form.retirementAge || 60} onChange={handleChange} required />
+                  <span className="input-suffix">yrs</span>
+                </div>
               </div>
             </div>
             <div className="form-group">
