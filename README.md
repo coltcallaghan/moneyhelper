@@ -116,8 +116,19 @@ Note: `startAge`/`endAge` for phases are computed cumulatively (each phase start
 ## Where to look if you change assumptions
 - If you change the nominal/inflation assumptions or tax band thresholds, update the constants and helper functions in `src/App.js` (search for `getEffectivePA`, `calcIncomeTax`, `calcNI`, and `AP_LIFETIME_MAX`).
 
-## Disclaimer
-This README explains how the app calculates projections and should be used for developer understanding only. It does not constitute financial advice. For decisions about pensions, ISA usage, AFPS‑15, and tax planning, consult a qualified financial adviser or HMRC guidance.
+## Disclaimer — Simulation Only (not regulated financial advice)
+This README explains how the app calculates projections and is intended for developer and user education only. The app is a simulation and provides illustrative, generic examples of how different contribution mixes and wrappers might grow over time. It does NOT:
+
+- Provide personal or regulated financial advice.
+- Recommend, solicit, or sell financial products or services.
+- Replace the guidance of an FCA-authorised financial adviser or official HMRC guidance.
+
+If users need advice tailored to their individual circumstances, they should consult an FCA-authorised financial adviser. For tax treatment and official rules, refer to HMRC and official government guidance. Use the outputs of this tool as illustrative scenarios only and not as the sole basis for financial decisions.
+
+Suggested in-app wording (recommended):
+"This tool is a simulation for illustrative purposes only and does not provide regulated financial advice. For personalised advice, consult an FCA-authorised financial adviser."
+
+If you would like, I can add an in-app banner/modal with the suggested wording and a link to the FCA and HMRC pages.
 # Getting Started with Create React App
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).

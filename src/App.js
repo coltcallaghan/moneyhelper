@@ -3,6 +3,7 @@ import './App.css';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts';
 import { buildMODActionPlan } from './actionPlanMOD';
 import { buildCivilianActionPlan } from './actionPlanCivilian';
+import DisclaimerBanner from './DisclaimerBanner';
 
 // ── Info Hint popup ───────────────────────────────────────────────────────
 function InfoHint({ children }) {
@@ -1924,6 +1925,7 @@ function App() {
 
   return (
     <div className="app">
+      <DisclaimerBanner />
       {/* ── Header ── */}
       <header className="app-header">
         {/* Removed header-badge bubble helmet/title */}
