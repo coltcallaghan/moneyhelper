@@ -235,10 +235,14 @@ html, body {
 }
 
 /* Desktop 2-column layout */
-.app-body {
+
+.app-body.full-step {
+  min-height: 100vh;
+  width: 100vw;
   display: flex;
-  flex-direction: column;
-  gap: 2rem;
+  align-items: stretch;
+  justify-content: center;
+  background: var(--bg-main, #101828);
 }
 
 .app-col-left,
@@ -324,15 +328,21 @@ html, body {
 }
 
 /* ── Form Card ────────────────────────────────────────────────────────────── */
-.form-card {
+
+.form-card.full-step-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 2rem;
-  margin-bottom: 2rem;
+  padding: 2.5rem 2.5rem 2rem 2.5rem;
+  margin: auto;
   box-shadow: var(--shadow);
-  width: 100%;
+  width: 100vw;
+  max-width: 600px;
+  min-height: 100vh;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .form-section-label {
