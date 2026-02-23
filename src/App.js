@@ -11,43 +11,6 @@ import PersonalDetails from './steps/PersonalDetails';
 import CurrentPots from './steps/CurrentPots';
 import ContributionProjection from './steps/ContributionProjection';
 
-// ── Info Hint popup ───────────────────────────────────────────────────────
-function InfoHint({ children }) {
-  const [open, setOpen] = useState(false);
-  const wrapRef = useRef(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
-
-  return (
-    <span className="info-hint-wrap" ref={wrapRef}>
-      <button
-        type="button"
-        className={`info-hint-btn${open ? ' open' : ''}`}
-        onClick={() => setOpen(o => !o)}
-        aria-label="More information"
-        aria-expanded={open}
-      >
-        i
-      </button>
-      {open && (
-        <div className="info-hint-popup" role="dialog">
-          <div className="info-hint-popup-header">
-            <span className="info-hint-popup-title">Info</span>
-            <button type="button" className="info-hint-close" onClick={() => setOpen(false)} aria-label="Close">✕</button>
-          </div>
-          <div className="info-hint-popup-body">{children}</div>
-        </div>
-      )}
-    </span>
-  );
-}
 
 // ── Step Progress Indicator ───────────────────────────────────────────────
 const STEP_LABELS = ['Service Status', 'Personal Details', 'Existing Savings', 'Goals & Projection'];
@@ -1675,17 +1638,6 @@ function ResultCard({ option, maxEfficiency, years }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN APP
 // ─────────────────────────────────────────────────────────────────────────────
-const RETURN_PRESETS = [
-  { label: 'Conservative 5%', value: 0.05 },
-  { label: 'Balanced 7%',     value: 0.07 },
-  { label: 'Growth 9%',       value: 0.09 },
-];
-
-const INFLATION_PRESETS = [
-  { label: 'Low 2%',      value: 0.02  },
-  { label: 'Target 2.5%', value: 0.025 },
-  { label: 'High 4%',     value: 0.04  },
-];
 
 function App() {
   // Set browser tab title on mount
@@ -1841,46 +1793,6 @@ function App() {
     }, 100);
   };
 
-  // Max-tax helper removed per request
-
-  // Live tax preview — use adjusted salary if payslip details provided
-  const liveSalary  = parseFloat(form.salary) || 0;
-  const liveTaxInfo = parseTaxCode(form.taxCode);
-  const liveSalSac  = parseFloat(form.salSacrifice) || 0;
-  const liveFlatExp = parseFloat(form.flatRateExpenses) || 0;
-  const liveManualTaxable = parseFloat(form.manualTaxablePay) || 0;
-  const liveAdjustedSalary = liveManualTaxable > 0
-    ? liveManualTaxable
-    : liveSalary - liveSalSac - liveFlatExp;
-  const liveNiableSalary = liveSalary - liveSalSac;
-  const liveHasDeductions = liveSalSac > 0 || liveFlatExp > 0 || liveManualTaxable > 0;
-  const liveTaxBasis = liveHasDeductions ? liveAdjustedSalary : liveSalary;
-  const liveNIBasis  = liveHasDeductions ? liveNiableSalary : liveSalary;
-  const liveMarginal = liveSalary > 0 ? getMarginalTaxRate(liveTaxBasis, liveTaxInfo) : null;
-  const liveNI       = liveSalary > 0 ? getMarginalNI(liveNIBasis)                   : null;
-
-  // Live inflation-adjusted return
-  const liveNominal    = parseFloat(form.returnRate)    || 0.07;
-  const liveInflation  = parseFloat(form.inflationRate) || 0.025;
-  const liveRealReturn = (1 + liveNominal) / (1 + liveInflation) - 1;
-
-  // Live contribution limit hints
-  const liveAge          = parseInt(form.age) || 30;
-  const liveRetAge       = parseInt(form.retirementAge) || 60;
-  const liveLeaveAge     = parseInt(form.leaveAge) || liveRetAge;
-  const liveLeaveYears   = Math.max(0, Math.min(liveLeaveAge, liveRetAge) - liveAge);
-  const liveEstCost100   = Math.round(800 * Math.pow(1.042, liveAge - 20));
-  const livePeriodicLoading = 1.37; // ~37% more expensive for monthly vs single premium
-  const liveCostPer100Base  = parseFloat(form.apCostPer100) || liveEstCost100;
-  const liveCostPer100   = form.apPaymentType === 'periodic' && !form.apCostPer100
-    ? Math.round(liveEstCost100 * livePeriodicLoading)
-    : liveCostPer100Base;
-  const liveApMaxContrib = liveLeaveYears > 0
-    ? Math.min(Math.round((8571.21 / 100) * liveCostPer100 / liveLeaveYears), 60000)
-    : Math.min(Math.round(85 * liveCostPer100), 60000);
-  const liveSippNetLimit = liveSalary > 0 ? Math.floor(Math.min(60000, liveSalary) / 1.25) : 0;
-  const liveContribRaw    = parseFloat(form.contribution) || 0;
-  const liveContrib        = form.contributionFreq === 'monthly' ? liveContribRaw * 12 : liveContribRaw;
 
   // ── Local Save/Compare State ──
   const [savedCalcs, setSavedCalcs] = useState(() => {
@@ -1917,7 +1829,10 @@ function App() {
         ...prev.slice(0, 9)
       ];
     });
-    setTempNames(prev => [`Calculation ${savedCalcs.length + 1}`, ...prev.slice(0, 9)]);
+    // Use functional updater to avoid depending on savedCalcs in the dep array;
+    // form is intentionally captured at the time results are generated
+    setTempNames(prev => [`Calculation ${prev.length + 1}`, ...prev.slice(0, 9)]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [results]);
 
   // Delete a saved calculation
