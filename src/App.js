@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts';
@@ -45,6 +46,31 @@ function InfoHint({ children }) {
         </div>
       )}
     </span>
+  );
+}
+
+// ── Step Progress Indicator ───────────────────────────────────────────────
+const STEP_LABELS = ['Service Status', 'Personal Details', 'Existing Savings', 'Goals & Projection'];
+function StepProgress({ currentStep }) {
+  return (
+    <div className="step-progress">
+      {STEP_LABELS.map((label, i) => {
+        const num = i + 1;
+        const isDone = currentStep > num;
+        const isActive = currentStep === num;
+        return (
+          <React.Fragment key={num}>
+            <div className={`step-progress-item${isActive ? ' active' : ''}${isDone ? ' done' : ''}`}>
+              <span className="step-progress-num">{isDone ? '✓' : num}</span>
+              <span className="step-progress-label">{label}</span>
+            </div>
+            {i < STEP_LABELS.length - 1 && (
+              <div className={`step-progress-connector${isDone ? ' done' : ''}`} />
+            )}
+          </React.Fragment>
+        );
+      })}
+    </div>
   );
 }
 
@@ -96,7 +122,7 @@ function parseTaxCode(code) {
     const pa = parseInt(stdMatch[1]) * 10;
     return {
       pa, mode: 'normal', scottish,
-      note: `Personal allowance: £${pa.toLocaleString()}${scottish ? ' (Scottish taxpayer — income tax bands differ slightly)' : ''}`,
+      note: `Personal allowance: £${pa.toLocaleString()}${scottish ? ' (Scottish taxpayer — income tax bands differ slightly)' : ''}`
     };
   }
   return { pa: 12570, mode: 'normal', note: 'Unrecognised code — using standard £12,570 allowance' };
@@ -218,7 +244,7 @@ function calcMixScenarios(contribution, years, returnRate, taxRate) {
     return {
       label, isa, netCost, isaPot, sippPot, totalPot,
       sippLump, isaIncome, sippNetIncome, sippDrawdown, sippTax,
-      totalNetIncome, incomePerPound,
+      totalNetIncome, incomePerPound
     };
   });
 
@@ -385,7 +411,7 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
         ap:        p.steps.find(s => s.vehicle === 'AFPS 15 Added Pension')?.gross ?? 0,
         sippNet:   p.steps.find(s => s.vehicle === 'SIPP (Private Pension)')?.gross ?? 0,
         sippGross: (p.steps.find(s => s.vehicle === 'SIPP (Private Pension)')?.gross ?? 0) * 1.25,
-        isa:       p.steps.find(s => s.vehicle === 'Stocks & Shares ISA')?.gross ?? 0,
+        isa:       p.steps.find(s => s.vehicle === 'Stocks & Shares ISA')?.gross ?? 0
       };
     });
   }
@@ -637,7 +663,7 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
   const mortgageAnalysis = {
     propertyValue, mortgageBalance, mortgageRate, mortgageTermYears, monthlyMortgage,
     equityNow, equityRetirement, shouldOverpay, verdict: mortgageVerdict,
-    totalInterestEst, mortgagePaidOffAge,
+    totalInterestEst, mortgagePaidOffAge
   };
   const propertyEquityAtRetirement = mortgageAnalysis ? mortgageAnalysis.equityRetirement : propertyValueAtRetire;
   const liquidWealth  = isaOptPot + sippOptPot;
@@ -646,9 +672,140 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
 
   return {
     options, maxEfficiency, fireNumber, years, retirementAge, mixData, existingDbPension, statePensionAge, statePension,
-    inflationRate, realReturnRate, returnRate, actionPlan, phaseAllocations, contribution, salary, leaveYears: leaveYears
+    inflationRate, realReturnRate, returnRate, actionPlan, phaseAllocations, contribution, salary, leaveYears: leaveYears,
+    recommendation: { best, reason: recReason },
+    taxSummary: { incomeTax, ni, takeHome, effectiveTaxRate: effTaxRate, marginalRate: taxRate, niRate, effectivePA, taxInfo, adjustedSalary: taxBasis, niableSalary: niBasis, salSacrifice, flatRateExpenses, hasDeductions },
+    mortgageAnalysis,
+    cashAnalysis: hasCash ? { cashReserve, monthlyExpenses, emergencyTarget, emergencyShortfall, emergencyOk } : null,
+    netWorth: { isaOptPot, sippOptPot, apOptPot, cashAtRetirement, propertyEquityAtRetirement, liquidWealth, totalNetWorth, dbOptPot },
+    sippNetLimit, apMaxContrib,
   };
 }
+// ─────────────────────────────────────────────────────────────────────────────
+// ACTION PLAN CARD
+// Shows a phased, prioritised step-by-step allocation of the user's budget
+// ─────────────────────────────────────────────────────────────────────────────
+function ActionPlanCard({ results }) {
+  const { actionPlan, contribution } = results;
+  const { phases, alreadyLeft } = actionPlan;
+
+  if (!phases || phases.length === 0) return null;
+
+  const multiPhase = phases.length > 1;
+
+  return (
+    <div className="action-plan-card">
+      <div className="ap-header">
+        <span className="ap-header-icon">🗺️</span>
+        <div>
+          <p className="ap-title">Your Action Plan</p>
+          <p className="ap-subtitle">
+            {multiPhase
+              ? `How to allocate your ${fmtGBP(contribution)}/yr — changes when you leave MOD service`
+              : `Exactly how to allocate your ${fmtGBP(contribution)}/yr for maximum efficiency`}
+          </p>
+        </div>
+      </div>
+
+      {alreadyLeft && (
+        <p className="ap-left-note">You've left MOD service — Added Pension contributions are no longer possible. Your existing Added Pension is preserved and CPI-linked.</p>
+      )}
+
+      {phases.map((phase, pi) => (
+        <div key={pi} className="ap-phase">
+          <div className="ap-phase-header">
+            <span className="ap-phase-icon">{phase.icon}</span>
+            <div>
+              <p className="ap-phase-label">{phase.label}</p>
+              <p className="ap-phase-subtitle">{phase.subtitle}</p>
+            </div>
+          </div>
+
+          <div className="ap-steps">
+            {phase.steps.map((s, i) => (
+              <div key={i} className="ap-step" style={{ '--step-color': s.color }}>
+                <div className="ap-step-number">Step {i + 1}</div>
+                <div className="ap-step-header">
+                  <span className="ap-step-icon">{s.icon}</span>
+                  <span className="ap-step-vehicle">{s.vehicle}</span>
+                  <span className="ap-step-amount" style={{ color: s.color }}>{fmtGBP(s.gross)}/yr</span>
+                </div>
+                <div className="ap-step-body">
+                  <div className="ap-step-money">
+                    <div className="ap-step-money-row">
+                      <span className="ap-money-label">Gross contribution</span>
+                      <span className="ap-money-value">{fmtGBP(s.gross)}/yr</span>
+                    </div>
+                    {s.saving > 0 && (
+                      <div className="ap-step-money-row">
+                        <span className="ap-money-label">Tax + NI saved</span>
+                        <span className="ap-money-value positive">−{fmtGBP(s.saving)}/yr</span>
+                      </div>
+                    )}
+                    {s.govTopUp > 0 && (
+                      <div className="ap-step-money-row">
+                        <span className="ap-money-label">Govt top-up</span>
+                        <span className="ap-money-value positive">+{fmtGBP(s.govTopUp)}/yr</span>
+                      </div>
+                    )}
+                    <div className="ap-step-money-row ap-net-row">
+                      <span className="ap-money-label">Net cost to you</span>
+                      <span className="ap-money-value">{fmtGBP(s.netCost)}/yr</span>
+                    </div>
+                  </div>
+                  <p className="ap-step-outcome">→ {s.outcome}</p>
+                  <p className="ap-step-reason">{s.reason}</p>
+                  {s.note && <p className="ap-step-note">💡 {s.note}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="ap-phase-totals">
+            <div className="ap-summary-row">
+              <span>Phase budget</span>
+              <span className="ap-summary-value">{fmtGBP(phase.totalGross)}/yr × {phase.years} yr{phase.years !== 1 ? 's' : ''}</span>
+            </div>
+            <div className="ap-summary-row">
+              <span>Net cost to you</span>
+              <span className="ap-summary-value">{fmtGBP(phase.totalNet)}/yr</span>
+            </div>
+            {phase.totalGross > phase.totalNet && (
+              <div className="ap-summary-row ap-summary-saving">
+                <span>Tax + NI savings</span>
+                <span className="ap-summary-value positive">{fmtGBP(phase.totalGross - phase.totalNet)}/yr</span>
+              </div>
+            )}
+          </div>
+
+          {multiPhase && pi < phases.length - 1 && (
+            <div className="ap-phase-transition">
+              <span className="ap-transition-arrow">↓</span>
+              <span>When you leave MOD, redirect Added Pension budget into SIPP + ISA</span>
+            </div>
+          )}
+        </div>
+      ))}
+
+      <div className="ap-summary">
+        <p className="ap-summary-title">Overall Summary</p>
+        {phases.map((phase, pi) => (
+          <div key={pi} className="ap-summary-row">
+            <span>{phase.icon} {phase.label}</span>
+            <span className="ap-summary-value">{fmtGBP(phase.totalNet)}/yr net for {phase.years} yr{phase.years !== 1 ? 's' : ''}</span>
+          </div>
+        ))}
+        {phases[0] && phases[0].totalGross > phases[0].totalNet && (
+          <p className="ap-summary-note">
+            {multiPhase ? 'While serving: f' : 'F'}or every £1 you spend, {fmtGBP(phases[0].totalGross / phases[0].totalNet, 2)} is invested — a {fmtPct((phases[0].totalGross - phases[0].totalNet) / phases[0].totalNet)} boost from tax relief and salary sacrifice.
+            That's {fmtGBP(phases[0].totalGross / 12, 0)}/month gross from just {fmtGBP(phases[0].totalNet / 12, 0)}/month net.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // MIX CARD COMPONENT
 // ─────────────────────────────────────────────────────────────────────────────
 function MixCard({ mixData, taxRate, contribution, years }) {
@@ -1552,12 +1709,13 @@ function App() {
     salSacrifice: '', flatRateExpenses: '', manualTaxablePay: '',
     propertyValue: '', mortgageBalance: '', mortgageRate: '', mortgageTermYears: '', monthlyMortgage: '',
     cashReserve: '', monthlyExpenses: '',
-    contribution: '', contributionFreq: 'annual', retirementAge: '60', returnRate: '0.07', inflationRate: '0.025', targetIncome: '',
+    contribution: '', contributionFreq: 'annual', retirementAge: '', returnRate: '0.07', inflationRate: '0.025', targetIncome: '',
   });
-  const [showPayslipDetails, setShowPayslipDetails] = useState(false);
+  // const [showPayslipDetails, setShowPayslipDetails] = useState(false);
   const [showPropertyDetails, setShowPropertyDetails] = useState(false);
   const [step, setStep] = useState(0);
-  
+  const [formCollapsed, setFormCollapsed] = useState(false);
+
   const [results, setResults] = useState(null);
   const [errors, setErrors] = useState({});
   const formRef = useRef(null);
@@ -1675,6 +1833,7 @@ function App() {
       existingIsaPot, existingSippPot, statePensionAge, statePension, contribution, retirementAge, returnRate, inflationRate, targetIncome, salSacrifice, flatRateExpenses, manualTaxablePay, propertyValue, mortgageBalance, mortgageRate, mortgageTermYears, monthlyMortgage, propertyAppRate, cashReserve, monthlyExpenses,
       isServing: !!form.isServing
     }));
+    setFormCollapsed(true);
     setTimeout(() => {
       if (taxSummaryRef.current) {
         taxSummaryRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1801,27 +1960,64 @@ function App() {
       {/* ── Header ── */}
       <header className="app-header" />
 
-      {/* ── Body: 2-col on desktop ── */}
-      <div className={`app-body${results ? ' has-results' : ''}`}>
+      {/* ── Body: single column layout ── */}
+      <div className="app-body">
       <div className="app-col-left">
 
       {/* ── Input Form ── */}
-      <div className="form-card">
-        {step === 0 ? (
-          <IntroStep setStep={setStep} />
-        ) : (
-          <form ref={formRef} onSubmit={handleSubmit} noValidate>
-            {step >= 1 && step <= 4 ? (
-              <>
+      {formCollapsed && results ? (
+        <div className="form-card form-card-collapsed">
+          <div className="collapsed-inputs">
+            <div className="collapsed-inputs-grid">
+              <div className="collapsed-input-item">
+                <span className="collapsed-input-label">Salary</span>
+                <span className="collapsed-input-value">{fmtGBP(parseFloat(form.salary) || 0, 0)}</span>
+              </div>
+              <div className="collapsed-input-item">
+                <span className="collapsed-input-label">Age</span>
+                <span className="collapsed-input-value">{form.age}</span>
+              </div>
+              <div className="collapsed-input-item">
+                <span className="collapsed-input-label">Investing</span>
+                <span className="collapsed-input-value">{fmtGBP(parseFloat(form.contribution) || 0, 0)}/{form.contributionFreq === 'monthly' ? 'mo' : 'yr'}</span>
+              </div>
+              <div className="collapsed-input-item">
+                <span className="collapsed-input-label">Retire at</span>
+                <span className="collapsed-input-value">{form.retirementAge} yrs</span>
+              </div>
+              {form.isServing && (
+                <div className="collapsed-input-item">
+                  <span className="collapsed-input-label">Serving</span>
+                  <span className="collapsed-input-value">Yes</span>
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              className="btn-edit-inputs"
+              onClick={() => setFormCollapsed(false)}
+            >
+              ✎ Edit inputs
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="form-card">
+          {step === 0 ? (
+            <IntroStep setStep={setStep} />
+          ) : (
+            <>
+              <StepProgress currentStep={step} />
+              <form ref={formRef} onSubmit={handleSubmit} noValidate>
                 {step === 1 && <ServiceStatus form={form} handleChange={handleChange} setStep={setStep} />}
                 {step === 2 && <PersonalDetails form={form} handleChange={handleChange} setStep={setStep} />}
                 {step === 3 && <CurrentPots form={form} handleChange={handleChange} showPropertyDetails={showPropertyDetails} setShowPropertyDetails={setShowPropertyDetails} setStep={setStep} />}
                 {step === 4 && <ContributionProjection form={form} handleChange={handleChange} setStep={setStep} />}
-              </>
-            ) : null}
-          </form>
-        )}
-      </div>
+              </form>
+            </>
+          )}
+        </div>
+      )}
 
       {/* ── Save/Compare Controls ── */}
       {results && (
@@ -1889,8 +2085,8 @@ function App() {
       </div>{/* end app-col-left */}
 
       <div className="app-col-right">
-      {/* ── Results ── */}
-      {results && (
+      {/* ── Results (only shown when form is collapsed) ── */}
+      {results && formCollapsed && (
         <div className="results-section">
 
           {/* Tax summary */}
@@ -1970,7 +2166,7 @@ function App() {
           )}
 
           {/* Action Plan */}
-          {/* <ActionPlanCard results={results} /> */}
+          <ActionPlanCard results={results} />
 
           {/* Retirement Income Timeline */}
           <RetirementTimelineChart results={results} form={form} />
@@ -2173,10 +2369,11 @@ function App() {
         </div>
       )}
 
+
       </div>{/* end app-col-right */}
       </div>{/* end app-body */}
     </div>
   );
-
 }
+
 export default App;

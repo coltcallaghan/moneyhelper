@@ -1,11 +1,9 @@
-
-import React from 'react';
 import InfoHint from '../InfoHint';
 
 export default function CurrentPots({ form, handleChange, showPropertyDetails, setShowPropertyDetails, setStep }) {
   return (
     <div>
-      <p className="form-section-label">Current Pots & Pension Statement <span className="label-hint">(optional — needed for full retirement picture)</span></p>
+      <p className="form-section-label">Current Pots &amp; Pension Statement <span className="label-hint">(optional — needed for full retirement picture)</span></p>
       <div className="form-grid">
         {/* MOD DB Pension */}
         <div className="form-group">
@@ -42,6 +40,33 @@ export default function CurrentPots({ form, handleChange, showPropertyDetails, s
         </div>
       </div>
 
+      {/* ── Cash Reserves (always visible) ───────────────────────────── */}
+      <p className="form-section-label" style={{ marginTop: '1.25rem' }}>Cash Reserves <span className="label-hint">(optional)</span></p>
+      <div className="form-grid">
+        <div className="form-group">
+          <div className="label-row">
+            <label htmlFor="cashReserve">Current Cash / Emergency Fund</label>
+            <InfoHint>Total easily accessible cash savings (current account + easy-access savings)</InfoHint>
+          </div>
+          <div className="input-wrap">
+            <span className="input-prefix">£</span>
+            <input id="cashReserve" name="cashReserve" type="number" placeholder="10000" min="0" value={form.cashReserve} onChange={handleChange} />
+          </div>
+        </div>
+        <div className="form-group">
+          <div className="label-row">
+            <label htmlFor="monthlyExpenses">Monthly Living Expenses <span className="label-hint">(exc. mortgage)</span></label>
+            <InfoHint>Used to calculate your emergency fund target (6 months)</InfoHint>
+          </div>
+          <div className="input-wrap">
+            <span className="input-prefix">£</span>
+            <input id="monthlyExpenses" name="monthlyExpenses" type="number" placeholder="2000" min="0" value={form.monthlyExpenses} onChange={handleChange} />
+            <span className="input-suffix">/mo</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Mortgage (expandable) ─────────────────────────────────────── */}
       <button
         type="button"
         className={`section-toggle-btn property-toggle${showPropertyDetails ? ' open' : ''}`}
@@ -50,7 +75,7 @@ export default function CurrentPots({ form, handleChange, showPropertyDetails, s
       >
         <span className="toggle-arrow">{showPropertyDetails ? '▼' : '▶'}</span>
         <span className="toggle-icon">🏠</span>
-        <span className="toggle-label">I have a mortgage & cash savings — include in my plan</span>
+        <span className="toggle-label">I have a mortgage — include in my plan</span>
       </button>
 
       {showPropertyDetails && (
@@ -74,42 +99,24 @@ export default function CurrentPots({ form, handleChange, showPropertyDetails, s
             <div className="form-group">
               <label htmlFor="mortgageRate">Mortgage Interest Rate</label>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <input id="mortgageRate" name="mortgageRate" type="range" min="0" max="10" step="0.1" value={form.mortgageRate || 4.5} onChange={handleChange} />
-                <span style={{ minWidth: '4.5rem', textAlign: 'right' }}>{(parseFloat(form.mortgageRate || 4.5) || 0) / 100}%</span>
-              </div>
-            </div>
-          </div>
-
-          <p className="form-section-label" style={{ marginTop: '1rem' }}>Cash Reserves</p>
-          <div className="form-grid">
-            <div className="form-group">
-              <div className="label-row">
-                <label htmlFor="cashReserve">Current Cash / Emergency Fund</label>
-                <InfoHint>Total easily accessible cash savings (current account + easy-access savings)</InfoHint>
-              </div>
-              <div className="input-wrap">
-                <span className="input-prefix">£</span>
-                <input id="cashReserve" name="cashReserve" type="number" placeholder="10000" min="0" value={form.cashReserve} onChange={handleChange} />
+                <input id="mortgageRate" name="mortgageRate" type="range" min="0" max="10" step="0.1" value={form.mortgageRate || 4.5} onChange={handleChange} style={{ flex: 1 }} />
+                <span style={{ minWidth: '3rem', textAlign: 'right' }}>{parseFloat(form.mortgageRate || 4.5).toFixed(1)}%</span>
               </div>
             </div>
             <div className="form-group">
-              <div className="label-row">
-                <label htmlFor="monthlyExpenses">Monthly Living Expenses <span className="label-hint">(exc. mortgage)</span></label>
-                <InfoHint>Used to calculate your emergency fund target (6 months)</InfoHint>
-              </div>
-              <div className="input-wrap">
-                <span className="input-prefix">£</span>
-                <input id="monthlyExpenses" name="monthlyExpenses" type="number" placeholder="2000" min="0" value={form.monthlyExpenses} onChange={handleChange} />
-                <span className="input-suffix">/mo</span>
+              <label htmlFor="mortgageTermYears">Remaining Mortgage Term</label>
+              <div className="input-wrap" style={{ width: '100%' }}>
+                <input id="mortgageTermYears" name="mortgageTermYears" type="number" placeholder="25" min="0" max="40" value={form.mortgageTermYears} onChange={handleChange} />
+                <span className="input-suffix">yrs</span>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      <div className="step-nav" style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'space-between' }}>
-        <button type="button" className="preset-btn" onClick={() => setStep(2)}>◀ Back</button>
-        <button type="button" className="preset-btn" onClick={() => setStep(4)}>Next ▶</button>
+      <div className="step-nav">
+        <button type="button" className="btn-nav" onClick={() => setStep(2)}>◀ Back</button>
+        <button type="button" className="btn-nav-primary" onClick={() => setStep(4)}>Next ▶</button>
       </div>
     </div>
   );

@@ -1,3 +1,294 @@
+/* ── Collapsed Inputs Bar ─────────────────────────────────────────────────── */
+.form-card-collapsed {
+  padding: 0.85rem 1.25rem !important;
+}
+
+.collapsed-inputs {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.collapsed-inputs-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+}
+
+.collapsed-input-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.collapsed-input-label {
+  font-size: 0.68rem;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+}
+
+.collapsed-input-value {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.btn-edit-inputs {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.45rem 1rem;
+  background: transparent;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.btn-edit-inputs:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ── Step Navigation Buttons ──────────────────────────────────────────────── */
+.step-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1.75rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
+}
+
+.btn-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.6rem 1.25rem;
+  background: transparent;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.btn-nav:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(34, 211, 238, 0.05);
+}
+
+.btn-nav-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.6rem 1.5rem;
+  background: var(--accent);
+  border: none;
+  border-radius: 8px;
+  color: #0f172a;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+}
+.btn-nav-primary:hover { opacity: 0.88; }
+.btn-nav-primary:active { transform: scale(0.98); }
+
+/* ── Start Button (Intro) ─────────────────────────────────────────────────── */
+.btn-start {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.85rem 2.5rem;
+  background: linear-gradient(135deg, #0ea5e9, var(--accent));
+  border: none;
+  border-radius: 10px;
+  color: #0f172a;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+  box-shadow: 0 4px 16px rgba(34, 211, 238, 0.25);
+}
+.btn-start:hover { opacity: 0.9; }
+.btn-start:active { transform: scale(0.98); }
+
+/* ── Step Progress Indicator ──────────────────────────────────────────────── */
+.step-progress {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+}
+
+.step-progress-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.step-progress-num {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  transition: background 0.2s, border-color 0.2s;
+  border: 2px solid var(--border);
+  background: var(--bg);
+  color: var(--dim);
+}
+
+.step-progress-item.active .step-progress-num {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0f172a;
+}
+
+.step-progress-item.done .step-progress-num {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: #10b981;
+  color: #10b981;
+}
+
+.step-progress-label {
+  font-size: 0.78rem;
+  color: var(--dim);
+  font-weight: 500;
+}
+
+.step-progress-item.active .step-progress-label {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.step-progress-item.done .step-progress-label {
+  color: #10b981;
+}
+
+.step-progress-connector {
+  flex: 1;
+  height: 2px;
+  min-width: 20px;
+  background: var(--border);
+  margin: 0 0.4rem;
+  border-radius: 2px;
+}
+
+.step-progress-connector.done {
+  background: #10b981;
+}
+
+/* ── Intro Step ───────────────────────────────────────────────────────────── */
+.intro-step {
+  text-align: center;
+  padding: 0.5rem 0;
+}
+
+.intro-steps-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0.5rem auto 0;
+  max-width: 38rem;
+  color: var(--dim);
+  font-size: 0.82rem;
+}
+
+.intro-step-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--muted);
+}
+
+.intro-step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(34, 211, 238, 0.15);
+  border: 1px solid rgba(34, 211, 238, 0.4);
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.intro-step-divider {
+  color: var(--border);
+  font-size: 0.9rem;
+}
+
+/* ── Service Status Toggle ────────────────────────────────────────────────── */
+.service-status-toggle {
+  margin: 0.5rem 0 1rem;
+}
+
+.service-toggle-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  background: rgba(34, 211, 238, 0.04);
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.service-toggle-label:hover {
+  border-color: rgba(34, 211, 238, 0.4);
+  background: rgba(34, 211, 238, 0.07);
+}
+
+.service-toggle-checkbox {
+  margin-top: 3px;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.service-toggle-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.service-toggle-sub {
+  font-size: 0.82rem;
+  color: var(--dim);
+  font-weight: 400;
+}
+
 /* Required field star styling */
 .required-star {
   color: #d32f2f;
@@ -411,6 +702,41 @@ html, body {
   border-color: #f87171 !important;
   box-shadow: 0 0 0 3px rgba(248,113,113,0.08) !important;
 }
+.field-error {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.78rem;
+  color: #f87171;
+  font-weight: 500;
+}
+
+/* ── AP Cost Info Box ─────────────────────────────────────────────────────── */
+.ap-cost-info {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding: 0.7rem 1rem;
+  background: rgba(34, 211, 238, 0.05);
+  border: 1px solid rgba(34, 211, 238, 0.2);
+  border-radius: 8px;
+  font-size: 0.82rem;
+}
+.ap-cost-info-label {
+  color: var(--muted);
+}
+.ap-cost-info-value {
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+.ap-cost-info-hint {
+  color: var(--dim);
+  font-size: 0.75rem;
+  width: 100%;
+  margin-top: 0.1rem;
+}
 @media (max-width: 600px) {
   .save-compare-bar {
     flex-direction: column;
@@ -461,7 +787,8 @@ html, body {
   padding-right: 2.8rem;
 }
 
-.bare-input {
+.bare-input,
+.form-group select {
   font-size: 1.13rem;
   font-weight: 600;
   padding: 0.55rem 0.8rem;
@@ -474,8 +801,18 @@ html, body {
   box-sizing: border-box;
 }
 
+.form-group select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2394a3b8' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  padding-right: 2.25rem;
+  cursor: pointer;
+}
+
 .input-wrap input:focus,
-.bare-input:focus {
+.bare-input:focus,
+.form-group select:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.12);
 }

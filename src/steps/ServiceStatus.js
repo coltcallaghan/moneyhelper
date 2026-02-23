@@ -1,24 +1,27 @@
-import React from 'react';
-
 export default function ServiceStatus({ form, handleChange, setStep }) {
   return (
-    <div style={{ gridColumn: '1 / -1' }}>
-      <div className="form-group" style={{ gridColumn: '1 / -1', marginBottom: '1em' }}>
-        <label htmlFor="isServing" style={{ fontWeight: 600 }}>
+    <div>
+      <p className="form-section-label">Are you currently serving?</p>
+      <div className="service-status-toggle">
+        <label className="service-toggle-label">
           <input
             id="isServing"
             name="isServing"
             type="checkbox"
             checked={form.isServing}
             onChange={handleChange}
-            style={{ marginRight: '0.5em' }}
+            className="service-toggle-checkbox"
           />
-          Currently serving in the military (show MOD-specific options)
+          <span className="service-toggle-text">
+            <strong>Currently serving in HM Armed Forces</strong>
+            <span className="service-toggle-sub">Unlocks MOD-specific options: AFPS 15 Added Pension, EDP calculations, service years</span>
+          </span>
         </label>
       </div>
-      <div className="step-nav" style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'space-between' }}>
-        <button type="button" className="preset-btn" onClick={() => setStep(0)}>◀ Back</button>
-        <button type="button" className="preset-btn" onClick={() => setStep(2)}>Next ▶</button>
+
+      <div className="step-nav">
+        <button type="button" className="btn-nav" onClick={() => setStep(0)}>◀ Back</button>
+        <button type="button" className="btn-nav-primary" onClick={() => setStep(2)}>Next ▶</button>
       </div>
     </div>
   );
