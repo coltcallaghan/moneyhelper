@@ -1890,21 +1890,27 @@ function App() {
       return [];
     }
   });
-  const [compareIdx, setCompareIdx] = useState(null); // index of saved calc to compare
+  const [viewingCalc, setViewingCalc] = useState(null); // saved calc being viewed (null = live)
   // Editing state for rename feature
   const [editingIdx, setEditingIdx] = useState(null);
   const [tempNames, setTempNames] = useState(() => savedCalcs.map(c => c.name || c.summary));
+
+  // ── Derived display values (live or viewed saved calc) ──
+  const displayResults = viewingCalc ? viewingCalc.results : results;
+  const displayForm    = viewingCalc ? viewingCalc.form    : form;
 
   // Save calculations to localStorage whenever changed
   useEffect(() => {
     localStorage.setItem('sf_savedCalcs', JSON.stringify(savedCalcs));
   }, [savedCalcs]);
 
-  // Save current calculation
-  function handleSaveCalculation() {
+  // Automatically save calculation when results change
+  useEffect(() => {
     if (!results) return;
     const summary = getCalcSummary(form, results);
     setSavedCalcs(prev => {
+      // Avoid duplicate saves for identical results
+      if (prev.length > 0 && JSON.stringify(prev[0].results) === JSON.stringify(results)) return prev;
       const nextIdx = prev.length + 1;
       return [
         { form: { ...form }, results, summary, ts: Date.now(), name: `Calculation ${nextIdx}` },
@@ -1912,46 +1918,33 @@ function App() {
       ];
     });
     setTempNames(prev => [`Calculation ${savedCalcs.length + 1}`, ...prev.slice(0, 9)]);
-  }
+  }, [results]);
 
   // Delete a saved calculation
   function handleDeleteSaved(idx) {
-    setSavedCalcs(prev => prev.filter((_, i) => i !== idx));
-    if (compareIdx === idx) setCompareIdx(null);
+    setSavedCalcs(prev => {
+      const next = prev.filter((_, i) => i !== idx);
+      return next;
+    });
+    setViewingCalc(vc => {
+      if (!vc) return vc;
+      // If the deleted calc was being viewed, go back to live
+      const deleted = savedCalcs[idx];
+      return (deleted && vc.ts === deleted.ts) ? null : vc;
+    });
   }
 
-  // Load a saved calculation into main view (show all results as if just calculated)
+  // Load a saved calculation into the main view
   function handleCompareSaved(idx) {
-    if (savedCalcs[idx]) {
-      setForm({ ...savedCalcs[idx].form });
-      setResults(savedCalcs[idx].results);
-      setCompareIdx(null); // Hide compare card
-      setTimeout(() => {
-        if (taxSummaryRef.current) {
-          taxSummaryRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
-      }, 100);
-    }
-  }
-
-  // Render compare card if selected
-  function renderCompareCard() {
-    if (compareIdx == null || !savedCalcs[compareIdx]) return null;
-    const { form: cForm, results: cResults, summary } = savedCalcs[compareIdx];
-    return (
-      <div className="compare-card">
-        <div className="compare-header">Comparison: <span>{summary}</span> <button className="compare-close" onClick={() => setCompareIdx(null)}>✕</button></div>
-        <div className="compare-body">
-          <div><strong>Net Worth:</strong> {cResults.netWorth ? fmtGBP(cResults.netWorth.totalNetWorth, 0) : '?'}</div>
-          <div><strong>Liquid Wealth:</strong> {cResults.netWorth ? fmtGBP(cResults.netWorth.liquidWealth, 0) : '?'}</div>
-          <div><strong>ISA Pot:</strong> {cResults.netWorth ? fmtGBP(cResults.netWorth.isaOptPot, 0) : '?'}</div>
-          <div><strong>SIPP Pot:</strong> {cResults.netWorth ? fmtGBP(cResults.netWorth.sippOptPot, 0) : '?'}</div>
-          <div><strong>Retirement Age:</strong> {cForm.retirementAge}</div>
-          <div><strong>Salary:</strong> {fmtGBP(cForm.salary, 0)}</div>
-          <div><strong>Contribution:</strong> {fmtGBP(cForm.contribution, 0)} /{cForm.contributionFreq === 'monthly' ? 'mo' : 'yr'}</div>
-        </div>
-      </div>
-    );
+    const calc = savedCalcs[idx];
+    if (!calc) return;
+    setViewingCalc(calc);
+    setFormCollapsed(true);
+    setTimeout(() => {
+      if (taxSummaryRef.current) {
+        taxSummaryRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 50);
   }
 
   return (
@@ -1965,40 +1958,126 @@ function App() {
       <div className="app-col-left">
 
       {/* ── Input Form ── */}
-      {formCollapsed && results ? (
+      {formCollapsed && (results || viewingCalc) ? (
         <div className="form-card form-card-collapsed">
-          <div className="collapsed-inputs">
-            <div className="collapsed-inputs-grid">
-              <div className="collapsed-input-item">
-                <span className="collapsed-input-label">Salary</span>
-                <span className="collapsed-input-value">{fmtGBP(parseFloat(form.salary) || 0, 0)}</span>
-              </div>
-              <div className="collapsed-input-item">
-                <span className="collapsed-input-label">Age</span>
-                <span className="collapsed-input-value">{form.age}</span>
-              </div>
-              <div className="collapsed-input-item">
-                <span className="collapsed-input-label">Investing</span>
-                <span className="collapsed-input-value">{fmtGBP(parseFloat(form.contribution) || 0, 0)}/{form.contributionFreq === 'monthly' ? 'mo' : 'yr'}</span>
-              </div>
-              <div className="collapsed-input-item">
-                <span className="collapsed-input-label">Retire at</span>
-                <span className="collapsed-input-value">{form.retirementAge} yrs</span>
-              </div>
-              {form.isServing && (
-                <div className="collapsed-input-item">
-                  <span className="collapsed-input-label">Serving</span>
-                  <span className="collapsed-input-value">Yes</span>
-                </div>
+          <div className="collapsed-summary">
+            <div className="collapsed-summary-header">
+              <span className="collapsed-summary-title">
+                {viewingCalc ? (viewingCalc.name || viewingCalc.summary) : 'Your Inputs'}
+              </span>
+              {viewingCalc ? (
+                <button type="button" className="btn-edit-inputs" onClick={() => setViewingCalc(null)}>← Live results</button>
+              ) : (
+                <button type="button" className="btn-edit-inputs" onClick={() => setFormCollapsed(false)}>✎ Edit inputs</button>
               )}
             </div>
-            <button
-              type="button"
-              className="btn-edit-inputs"
-              onClick={() => setFormCollapsed(false)}
-            >
-              ✎ Edit inputs
-            </button>
+
+            <div className="chips-row">
+              {/* Personal */}
+              <div className="input-chip">
+                <span className="chip-label">Salary</span><span className="chip-sep">·</span><span className="chip-value">{fmtGBP(parseFloat(displayForm.salary) || 0, 0)}</span>
+              </div>
+              <div className="input-chip">
+                <span className="chip-label">Age</span><span className="chip-sep">·</span><span className="chip-value">{displayForm.age} yrs</span>
+              </div>
+              <div className={`input-chip${displayForm.isServing ? ' chip-serving' : ''}`}>
+                <span className="chip-label">Serving</span><span className="chip-sep">·</span><span className="chip-value">{displayForm.isServing ? 'Yes' : 'No'}</span>
+              </div>
+              {displayForm.isServing && displayForm.yearsService && (
+                <div className="input-chip">
+                  <span className="chip-label">Service</span><span className="chip-sep">·</span><span className="chip-value">{displayForm.yearsService} yrs</span>
+                </div>
+              )}
+              {displayForm.isServing && displayForm.leaveAge && (
+                <div className="input-chip">
+                  <span className="chip-label">Leave age</span><span className="chip-sep">·</span><span className="chip-value">{displayForm.leaveAge} yrs</span>
+                </div>
+              )}
+              {parseFloat(displayForm.manualTaxablePay) > 0 && (
+                <div className="input-chip">
+                  <span className="chip-label">P60 pay</span><span className="chip-sep">·</span><span className="chip-value">{fmtGBP(parseFloat(displayForm.manualTaxablePay), 0)}</span>
+                </div>
+              )}
+              {!displayForm.isServing && parseFloat(displayForm.salSacrifice) > 0 && (
+                <div className="input-chip">
+                  <span className="chip-label">Sal. sacrifice</span><span className="chip-sep">·</span><span className="chip-value">{fmtGBP(parseFloat(displayForm.salSacrifice), 0)}/yr</span>
+                </div>
+              )}
+              {!displayForm.isServing && parseFloat(displayForm.flatRateExpenses) > 0 && (
+                <div className="input-chip">
+                  <span className="chip-label">Flat rate exp.</span><span className="chip-sep">·</span><span className="chip-value">{fmtGBP(parseFloat(displayForm.flatRateExpenses), 0)}/yr</span>
+                </div>
+              )}
+
+              {/* Savings — conditional divider */}
+              {(parseFloat(displayForm.existingDbPension) > 0 || parseFloat(displayForm.existingIsaPot) > 0 || parseFloat(displayForm.existingSippPot) > 0) && (
+                <>
+                  <div className="chips-divider" />
+                  {parseFloat(displayForm.existingDbPension) > 0 && (
+                    <div className="input-chip">
+                      <span className="chip-label">DB pension</span><span className="chip-sep">·</span><span className="chip-value">{fmtGBP(parseFloat(displayForm.existingDbPension), 0)}/yr</span>
+                    </div>
+                  )}
+                  {parseFloat(displayForm.existingIsaPot) > 0 && (
+                    <div className="input-chip">
+                      <span className="chip-label">ISA pot</span><span className="chip-sep">·</span><span className="chip-value">{fmtGBP(parseFloat(displayForm.existingIsaPot), 0)}</span>
+                    </div>
+                  )}
+                  {parseFloat(displayForm.existingSippPot) > 0 && (
+                    <div className="input-chip">
+                      <span className="chip-label">SIPP pot</span><span className="chip-sep">·</span><span className="chip-value">{fmtGBP(parseFloat(displayForm.existingSippPot), 0)}</span>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Cash & property — conditional divider */}
+              {(parseFloat(displayForm.cashReserve) > 0 || parseFloat(displayForm.monthlyExpenses) > 0 || parseFloat(displayForm.propertyValue) > 0) && (
+                <>
+                  <div className="chips-divider" />
+                  {parseFloat(displayForm.cashReserve) > 0 && (
+                    <div className="input-chip">
+                      <span className="chip-label">Cash</span><span className="chip-sep">·</span><span className="chip-value">{fmtGBP(parseFloat(displayForm.cashReserve), 0)}</span>
+                    </div>
+                  )}
+                  {parseFloat(displayForm.monthlyExpenses) > 0 && (
+                    <div className="input-chip">
+                      <span className="chip-label">Monthly exp.</span><span className="chip-sep">·</span><span className="chip-value">{fmtGBP(parseFloat(displayForm.monthlyExpenses), 0)}/mo</span>
+                    </div>
+                  )}
+                  {parseFloat(displayForm.propertyValue) > 0 && (
+                    <div className="input-chip">
+                      <span className="chip-label">Property</span><span className="chip-sep">·</span><span className="chip-value">{fmtGBP(parseFloat(displayForm.propertyValue), 0)}</span>
+                    </div>
+                  )}
+                  {parseFloat(displayForm.mortgageBalance) > 0 && (
+                    <div className="input-chip">
+                      <span className="chip-label">Mortgage</span><span className="chip-sep">·</span><span className="chip-value">{fmtGBP(parseFloat(displayForm.mortgageBalance), 0)} @ {parseFloat(displayForm.mortgageRate || 4.5).toFixed(1)}%</span>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Goals */}
+              <div className="chips-divider" />
+              <div className="input-chip">
+                <span className="chip-label">Investing</span><span className="chip-sep">·</span><span className="chip-value">{fmtGBP(parseFloat(displayForm.contribution) || 0, 0)}/{displayForm.contributionFreq === 'monthly' ? 'mo' : 'yr'}</span>
+              </div>
+              <div className="input-chip">
+                <span className="chip-label">Retire at</span><span className="chip-sep">·</span><span className="chip-value">{displayForm.retirementAge} yrs</span>
+              </div>
+              {parseFloat(displayForm.targetIncome) > 0 && (
+                <div className="input-chip">
+                  <span className="chip-label">Target income</span><span className="chip-sep">·</span><span className="chip-value">{fmtGBP(parseFloat(displayForm.targetIncome), 0)}/yr</span>
+                </div>
+              )}
+              <div className="input-chip">
+                <span className="chip-label">Return</span><span className="chip-sep">·</span><span className="chip-value">{((parseFloat(displayForm.returnRate) || 0.07) * 100).toFixed(1)}%</span>
+              </div>
+              <div className="input-chip">
+                <span className="chip-label">Inflation</span><span className="chip-sep">·</span><span className="chip-value">{((parseFloat(displayForm.inflationRate) || 0.025) * 100).toFixed(1)}%</span>
+              </div>
+            </div>
           </div>
         </div>
       ) : (
@@ -2020,9 +2099,8 @@ function App() {
       )}
 
       {/* ── Save/Compare Controls ── */}
-      {results && (
+      {(results || viewingCalc) && (
         <div className="save-compare-bar">
-          <button className="btn-save-calc" onClick={handleSaveCalculation}>💾 Save Calculation</button>
         {savedCalcs.length > 0 && (
           <div className="saved-list-vertical">
             <span className="saved-list-title">Saved Calculations</span>
@@ -2052,7 +2130,7 @@ function App() {
                   setTempNames(prev => prev.map((n, idx) => idx === i ? c.name || c.summary : n));
                 }
                 return (
-                  <li key={c.ts} className={`saved-item-vertical${i === compareIdx ? ' selected' : ''}`}> 
+                  <li key={c.ts} className={`saved-item-vertical${viewingCalc && viewingCalc.ts === c.ts ? ' selected' : ''}`}>
                     <div className="saved-item-main">
                       <button className="saved-item-summary" onClick={() => handleCompareSaved(i)}>{c.name && c.name.trim() !== '' ? c.name : c.summary}</button>
                       <button className="delete-btn" onClick={() => handleDeleteSaved(i)} title="Delete">🗑️</button>
@@ -2081,12 +2159,11 @@ function App() {
         )}
       </div>
       )}
-      {renderCompareCard()}
       </div>{/* end app-col-left */}
 
       <div className="app-col-right">
-      {/* ── Results (only shown when form is collapsed) ── */}
-      {results && formCollapsed && (
+      {/* ── Results ── */}
+      {displayResults && formCollapsed && (
         <div className="results-section">
 
           {/* Tax summary */}
@@ -2095,53 +2172,53 @@ function App() {
             <div className="tax-summary-grid">
               <div className="tax-summary-item">
                 <span className="ts-label">Gross Pay</span>
-                <span className="ts-value">{fmtGBP(results.salary)}</span>
-                {results.taxSummary.hasDeductions && (
+                <span className="ts-value">{fmtGBP(displayResults.salary)}</span>
+                {displayResults.taxSummary.hasDeductions && (
                   <span className="ts-sub">
-                    {results.taxSummary.salSacrifice > 0 && `−${fmtGBP(results.taxSummary.salSacrifice)} sal. sacrifice`}
-                    {results.taxSummary.salSacrifice > 0 && results.taxSummary.flatRateExpenses > 0 && ', '}
-                    {results.taxSummary.flatRateExpenses > 0 && `−${fmtGBP(results.taxSummary.flatRateExpenses)} expenses`}
+                    {displayResults.taxSummary.salSacrifice > 0 && `−${fmtGBP(displayResults.taxSummary.salSacrifice)} sal. sacrifice`}
+                    {displayResults.taxSummary.salSacrifice > 0 && displayResults.taxSummary.flatRateExpenses > 0 && ', '}
+                    {displayResults.taxSummary.flatRateExpenses > 0 && `−${fmtGBP(displayResults.taxSummary.flatRateExpenses)} expenses`}
                   </span>
                 )}
               </div>
-              {results.taxSummary.hasDeductions && (
+              {displayResults.taxSummary.hasDeductions && (
                 <div className="tax-summary-item">
                   <span className="ts-label">Taxable Pay</span>
-                  <span className="ts-value">{fmtGBP(results.taxSummary.adjustedSalary)}</span>
-                  <span className="ts-sub">{fmtGBP(results.salary - results.taxSummary.adjustedSalary)} sheltered from tax</span>
+                  <span className="ts-value">{fmtGBP(displayResults.taxSummary.adjustedSalary)}</span>
+                  <span className="ts-sub">{fmtGBP(displayResults.salary - displayResults.taxSummary.adjustedSalary)} sheltered from tax</span>
                 </div>
               )}
               <div className="tax-summary-item">
                 <span className="ts-label">Personal Allowance</span>
-                <span className="ts-value">{results.taxSummary.taxInfo.pa <= 0 ? 'None' : fmtGBP(results.taxSummary.effectivePA)}</span>
-                {results.taxSummary.effectivePA !== results.taxSummary.taxInfo.pa && results.taxSummary.taxInfo.pa > 0 && (
-                  <span className="ts-sub">Tapered from {fmtGBP(results.taxSummary.taxInfo.pa)}</span>
+                <span className="ts-value">{displayResults.taxSummary.taxInfo.pa <= 0 ? 'None' : fmtGBP(displayResults.taxSummary.effectivePA)}</span>
+                {displayResults.taxSummary.effectivePA !== displayResults.taxSummary.taxInfo.pa && displayResults.taxSummary.taxInfo.pa > 0 && (
+                  <span className="ts-sub">Tapered from {fmtGBP(displayResults.taxSummary.taxInfo.pa)}</span>
                 )}
               </div>
               <div className="tax-summary-item">
                 <span className="ts-label">Income Tax</span>
-                <span className="ts-value negative">{fmtGBP(results.taxSummary.incomeTax)}</span>
-                <span className="ts-sub">Effective rate: {fmtPct(results.taxSummary.effectiveTaxRate, 1)}</span>
+                <span className="ts-value negative">{fmtGBP(displayResults.taxSummary.incomeTax)}</span>
+                <span className="ts-sub">Effective rate: {fmtPct(displayResults.taxSummary.effectiveTaxRate, 1)}</span>
               </div>
               <div className="tax-summary-item">
                 <span className="ts-label">National Insurance</span>
-                <span className="ts-value negative">{fmtGBP(results.taxSummary.ni)}</span>
-                {results.taxSummary.hasDeductions && (
-                  <span className="ts-sub">On NIable pay of {fmtGBP(results.taxSummary.niableSalary)}</span>
+                <span className="ts-value negative">{fmtGBP(displayResults.taxSummary.ni)}</span>
+                {displayResults.taxSummary.hasDeductions && (
+                  <span className="ts-sub">On NIable pay of {fmtGBP(displayResults.taxSummary.niableSalary)}</span>
                 )}
               </div>
               <div className="tax-summary-item">
                 <span className="ts-label">Take-home Pay</span>
-                <span className="ts-value positive">{fmtGBP(results.taxSummary.takeHome)}</span>
-                <span className="ts-sub">Marginal rate: {fmtPct(results.taxSummary.marginalRate)}{results.taxSummary.marginalRate >= 0.60 ? ' ⚠️' : ''} | {fmtGBP(results.taxSummary.takeHome / 12, 0)}/mo</span>
+                <span className="ts-value positive">{fmtGBP(displayResults.taxSummary.takeHome)}</span>
+                <span className="ts-sub">Marginal rate: {fmtPct(displayResults.taxSummary.marginalRate)}{displayResults.taxSummary.marginalRate >= 0.60 ? ' ⚠️' : ''} | {fmtGBP(displayResults.taxSummary.takeHome / 12, 0)}/mo</span>
               </div>
             </div>
-            {results.taxSummary.taxInfo.note && (
+            {displayResults.taxSummary.taxInfo.note && (
               <div className="tax-code-info">
-                <span>🏷️ Tax code: {results.taxSummary.taxInfo.note}</span>
-                {typeof results.taxSummary.effectivePA === 'number' && typeof results.taxSummary.taxInfo.pa === 'number' && results.taxSummary.effectivePA < results.taxSummary.taxInfo.pa && (
+                <span>🏷️ Tax code: {displayResults.taxSummary.taxInfo.note}</span>
+                {typeof displayResults.taxSummary.effectivePA === 'number' && typeof displayResults.taxSummary.taxInfo.pa === 'number' && displayResults.taxSummary.effectivePA < displayResults.taxSummary.taxInfo.pa && (
                   <div style={{ marginTop: '0.5rem', color: '#92400e' }}>
-                    Note: your personal allowance has been reduced due to your income (tapered from {fmtGBP(results.taxSummary.taxInfo.pa)} to {fmtGBP(results.taxSummary.effectivePA)}).
+                    Note: your personal allowance has been reduced due to your income (tapered from {fmtGBP(displayResults.taxSummary.taxInfo.pa)} to {fmtGBP(displayResults.taxSummary.effectivePA)}).
                   </div>
                 )}
               </div>
@@ -2149,18 +2226,18 @@ function App() {
           </div>
 
           {/* FIRE number */}
-          {results.fireNumber > 0 && form.targetIncome && parseFloat(form.targetIncome) > 0 && (
+          {displayResults.fireNumber > 0 && form.targetIncome && parseFloat(form.targetIncome) > 0 && (
             <div className="fire-card">
               <div className="fire-header">
                 <span className="fire-emoji">🔥</span>
                 <div>
                   <p className="fire-label">Your FIRE Number (25× rule)</p>
-                  <p className="fire-number">{fmtGBP(results.fireNumber)}</p>
+                  <p className="fire-number">{fmtGBP(displayResults.fireNumber)}</p>
                 </div>
               </div>
               <p className="fire-sub">
-                Based on a 4% safe withdrawal rate — you need {fmtGBP(results.fireNumber)} in today's money to sustainably withdraw {fmtGBP(results.fireNumber / 25, 0)}/yr.
-                All projections adjusted for {fmtPct(results.inflationRate, 1)}/yr inflation (real growth: {fmtPct(results.realReturnRate, 1)}/yr).
+                Based on a 4% safe withdrawal rate — you need {fmtGBP(displayResults.fireNumber)} in today's money to sustainably withdraw {fmtGBP(displayResults.fireNumber / 25, 0)}/yr.
+                All projections adjusted for {fmtPct(displayResults.inflationRate, 1)}/yr inflation (real growth: {fmtPct(displayResults.realReturnRate, 1)}/yr).
               </p>
             </div>
           )}
@@ -2178,88 +2255,88 @@ function App() {
           <RetirementPictureCard results={results} isServing={form.isServing} />
 
           {/* Mortgage vs Invest Analysis */}
-          {results.mortgageAnalysis && (
+          {displayResults.mortgageAnalysis && (
             <div className="mortgage-card">
               <p className="form-section-label" style={{ marginBottom: '1rem' }}>🏠 Mortgage vs Invest Analysis</p>
               <div className="mortgage-verdict">
-                <span className={`mortgage-verdict-badge ${results.mortgageAnalysis.shouldOverpay ? 'overpay' : 'invest'}`}>
-                  {results.mortgageAnalysis.shouldOverpay ? '🏠 Overpay Mortgage' : '📈 Invest Instead'}
+                <span className={`mortgage-verdict-badge ${displayResults.mortgageAnalysis.shouldOverpay ? 'overpay' : 'invest'}`}>
+                  {displayResults.mortgageAnalysis.shouldOverpay ? '🏠 Overpay Mortgage' : '📈 Invest Instead'}
                 </span>
-                <p className="mortgage-verdict-text">{results.mortgageAnalysis.verdict}</p>
+                <p className="mortgage-verdict-text">{displayResults.mortgageAnalysis.verdict}</p>
               </div>
               <div className="tax-summary-grid" style={{ marginTop: '1rem' }}>
                 <div className="tax-summary-item">
                   <span className="ts-label">Property Value</span>
-                  <span className="ts-value">{fmtGBP(results.mortgageAnalysis.propertyValue, 0)}</span>
+                  <span className="ts-value">{fmtGBP(displayResults.mortgageAnalysis.propertyValue, 0)}</span>
                 </div>
                 <div className="tax-summary-item">
                   <span className="ts-label">Mortgage Balance</span>
-                  <span className="ts-value negative">{fmtGBP(results.mortgageAnalysis.mortgageBalance, 0)}</span>
+                  <span className="ts-value negative">{fmtGBP(displayResults.mortgageAnalysis.mortgageBalance, 0)}</span>
                 </div>
                 <div className="tax-summary-item">
                   <span className="ts-label">Current Equity</span>
-                  <span className="ts-value positive">{fmtGBP(results.mortgageAnalysis.equityNow, 0)}</span>
+                  <span className="ts-value positive">{fmtGBP(displayResults.mortgageAnalysis.equityNow, 0)}</span>
                 </div>
                 <div className="tax-summary-item">
                   <span className="ts-label">Mortgage Rate</span>
-                  <span className="ts-value">{fmtPct(results.mortgageAnalysis.mortgageRate, 2)}</span>
+                  <span className="ts-value">{fmtPct(displayResults.mortgageAnalysis.mortgageRate, 2)}</span>
                   <span className="ts-sub">Guaranteed return if overpaying</span>
                 </div>
                 <div className="tax-summary-item">
                   <span className="ts-label">Real Investment Return</span>
-                  <span className="ts-value">{fmtPct(results.realReturnRate, 2)}</span>
+                  <span className="ts-value">{fmtPct(displayResults.realReturnRate, 2)}</span>
                   <span className="ts-sub">Expected (not guaranteed)</span>
                 </div>
                 <div className="tax-summary-item">
                   <span className="ts-label">Est. Total Interest Cost</span>
-                  <span className="ts-value negative">{fmtGBP(results.mortgageAnalysis.totalInterestEst, 0)}</span>
-                  <span className="ts-sub">Over remaining {results.mortgageAnalysis.mortgageTermYears}yr term</span>
+                  <span className="ts-value negative">{fmtGBP(displayResults.mortgageAnalysis.totalInterestEst, 0)}</span>
+                  <span className="ts-sub">Over remaining {displayResults.mortgageAnalysis.mortgageTermYears}yr term</span>
                 </div>
-                {results.mortgageAnalysis.mortgagePaidOffAge && (
+                {displayResults.mortgageAnalysis.mortgagePaidOffAge && (
                   <div className="tax-summary-item">
                     <span className="ts-label">Mortgage Paid Off</span>
-                    <span className="ts-value">Age {results.mortgageAnalysis.mortgagePaidOffAge}</span>
-                    <span className="ts-sub">{results.mortgageAnalysis.mortgagePaidOffAge <= results.retirementAge ? '✅ Before retirement' : '⚠️ After retirement'}</span>
+                    <span className="ts-value">Age {displayResults.mortgageAnalysis.mortgagePaidOffAge}</span>
+                    <span className="ts-sub">{displayResults.mortgageAnalysis.mortgagePaidOffAge <= displayResults.retirementAge ? '✅ Before retirement' : '⚠️ After retirement'}</span>
                   </div>
                 )}
               </div>
               <div className="mortgage-note">
                 <p>💡 <strong>Key insight:</strong> Mortgage overpayment gives a <em>guaranteed, risk-free, tax-free</em> return equal to your mortgage rate.
                 Investment returns are uncertain. Even if expected returns are higher, the risk-free nature of mortgage overpayment has real value.</p>
-                <p style={{ marginTop: '0.5rem' }}>🎯 <strong>Suggested priority:</strong> Emergency fund (6 months) → {results.mortgageAnalysis.shouldOverpay ? 'Mortgage overpayment → ISA/SIPP' : 'AP/SIPP/ISA (per Action Plan) → Mortgage overpayment'}</p>
+                <p style={{ marginTop: '0.5rem' }}>🎯 <strong>Suggested priority:</strong> Emergency fund (6 months) → {displayResults.mortgageAnalysis.shouldOverpay ? 'Mortgage overpayment → ISA/SIPP' : 'AP/SIPP/ISA (per Action Plan) → Mortgage overpayment'}</p>
               </div>
             </div>
           )}
 
           {/* Cash Reserves */}
-          {results.cashAnalysis && (
+          {displayResults.cashAnalysis && (
             <div className="cash-card">
               <p className="form-section-label" style={{ marginBottom: '1rem' }}>🏦 Cash Reserve Health</p>
               <div className="tax-summary-grid">
                 <div className="tax-summary-item">
                   <span className="ts-label">Cash Reserves</span>
-                  <span className="ts-value">{fmtGBP(results.cashAnalysis.cashReserve, 0)}</span>
+                  <span className="ts-value">{fmtGBP(displayResults.cashAnalysis.cashReserve, 0)}</span>
                 </div>
                 <div className="tax-summary-item">
                   <span className="ts-label">Monthly Expenses</span>
-                  <span className="ts-value">{fmtGBP(results.cashAnalysis.monthlyExpenses, 0)}/mo</span>
+                  <span className="ts-value">{fmtGBP(displayResults.cashAnalysis.monthlyExpenses, 0)}/mo</span>
                 </div>
                 <div className="tax-summary-item">
                   <span className="ts-label">Emergency Cover</span>
-                  <span className={`ts-value ${results.cashAnalysis.emergencyOk ? 'positive' : 'negative'}`}>
-                    {results.cashAnalysis.monthlyExpenses > 0 ? `${(results.cashAnalysis.cashReserve / results.cashAnalysis.monthlyExpenses).toFixed(1)} months` : '—'}
+                  <span className={`ts-value ${displayResults.cashAnalysis.emergencyOk ? 'positive' : 'negative'}`}>
+                    {displayResults.cashAnalysis.monthlyExpenses > 0 ? `${(displayResults.cashAnalysis.cashReserve / displayResults.cashAnalysis.monthlyExpenses).toFixed(1)} months` : '—'}
                   </span>
-                  <span className="ts-sub">Target: 6 months ({fmtGBP(results.cashAnalysis.emergencyTarget, 0)})</span>
+                  <span className="ts-sub">Target: 6 months ({fmtGBP(displayResults.cashAnalysis.emergencyTarget, 0)})</span>
                 </div>
-                {results.cashAnalysis.emergencyShortfall > 0 && (
+                {displayResults.cashAnalysis.emergencyShortfall > 0 && (
                   <div className="tax-summary-item">
                     <span className="ts-label">Shortfall</span>
-                    <span className="ts-value negative">{fmtGBP(results.cashAnalysis.emergencyShortfall, 0)}</span>
+                    <span className="ts-value negative">{fmtGBP(displayResults.cashAnalysis.emergencyShortfall, 0)}</span>
                     <span className="ts-sub">⚠️ Build this before investing</span>
                   </div>
                 )}
               </div>
-              {!results.cashAnalysis.emergencyOk && results.cashAnalysis.monthlyExpenses > 0 && (
+              {!displayResults.cashAnalysis.emergencyOk && displayResults.cashAnalysis.monthlyExpenses > 0 && (
                 <div className="mortgage-note" style={{ marginTop: '0.75rem' }}>
                   <p>⚠️ <strong>Priority:</strong> Your emergency fund covers less than 6 months of expenses. Build this up in easy-access savings <em>before</em> investing or making mortgage overpayments.</p>
                 </div>
@@ -2268,52 +2345,52 @@ function App() {
           )}
 
           {/* Net Worth Summary */}
-          {(results.netWorth.totalNetWorth > 0) && (
+          {(displayResults.netWorth.totalNetWorth > 0) && (
             <div className="networth-card">
               <p className="form-section-label" style={{ marginBottom: '1rem' }}>💰 Projected Net Worth at Retirement</p>
               <div className="tax-summary-grid">
                 <div className="tax-summary-item">
                   <span className="ts-label">ISA Pot</span>
-                  <span className="ts-value">{fmtGBP(results.netWorth.isaOptPot, 0)}</span>
+                  <span className="ts-value">{fmtGBP(displayResults.netWorth.isaOptPot, 0)}</span>
                 </div>
                 <div className="tax-summary-item">
                   <span className="ts-label">SIPP Pot</span>
-                  <span className="ts-value">{fmtGBP(results.netWorth.sippOptPot, 0)}</span>
+                  <span className="ts-value">{fmtGBP(displayResults.netWorth.sippOptPot, 0)}</span>
                 </div>
-                {results.netWorth.apOptPot > 0 && (
+                {displayResults.netWorth.apOptPot > 0 && (
                   <div className="tax-summary-item">
                     <span className="ts-label">Added Pension (commuted)</span>
-                    <span className="ts-value">{fmtGBP(results.netWorth.apOptPot, 0)}</span>
+                    <span className="ts-value">{fmtGBP(displayResults.netWorth.apOptPot, 0)}</span>
                     <span className="ts-sub">DB value — not a pot you can access</span>
                   </div>
                 )}
-                {results.netWorth.dbOptPot > 0 && (
+                {displayResults.netWorth.dbOptPot > 0 && (
                   <div className="tax-summary-item">
                     <span className="ts-label">DB Pension (commuted)</span>
-                    <span className="ts-value">{fmtGBP(results.netWorth.dbOptPot, 0)}</span>
+                    <span className="ts-value">{fmtGBP(displayResults.netWorth.dbOptPot, 0)}</span>
                     <span className="ts-sub">Estimated capital equivalent (×25)</span>
                   </div>
                 )}
-                {results.netWorth.propertyEquityAtRetirement > 0 && (
+                {displayResults.netWorth.propertyEquityAtRetirement > 0 && (
                   <div className="tax-summary-item">
                     <span className="ts-label">Property Equity</span>
-                    <span className="ts-value">{fmtGBP(results.netWorth.propertyEquityAtRetirement, 0)}</span>
+                    <span className="ts-value">{fmtGBP(displayResults.netWorth.propertyEquityAtRetirement, 0)}</span>
                   </div>
                 )}
-                {results.netWorth.cashAtRetirement > 0 && (
+                {displayResults.netWorth.cashAtRetirement > 0 && (
                   <div className="tax-summary-item">
                     <span className="ts-label">Cash (nominal)</span>
-                    <span className="ts-value">{fmtGBP(results.netWorth.cashAtRetirement, 0)}</span>
+                    <span className="ts-value">{fmtGBP(displayResults.netWorth.cashAtRetirement, 0)}</span>
                     <span className="ts-sub">Eroded by inflation if not invested</span>
                   </div>
                 )}
                 <div className="tax-summary-item" style={{ borderTop: '1px solid rgba(255,255,255,0.15)', paddingTop: '0.75rem' }}>
                   <span className="ts-label" style={{ fontWeight: 700 }}>Liquid Wealth (ISA + SIPP)</span>
-                  <span className="ts-value positive" style={{ fontSize: '1.15rem' }}>{fmtGBP(results.netWorth.liquidWealth, 0)}</span>
+                  <span className="ts-value positive" style={{ fontSize: '1.15rem' }}>{fmtGBP(displayResults.netWorth.liquidWealth, 0)}</span>
                 </div>
                 <div className="tax-summary-item" style={{ borderTop: '1px solid rgba(255,255,255,0.15)', paddingTop: '0.75rem' }}>
                   <span className="ts-label" style={{ fontWeight: 700 }}>Total Net Worth</span>
-                  <span className="ts-value positive" style={{ fontSize: '1.25rem' }}>{fmtGBP(results.netWorth.totalNetWorth, 0)}</span>
+                  <span className="ts-value positive" style={{ fontSize: '1.25rem' }}>{fmtGBP(displayResults.netWorth.totalNetWorth, 0)}</span>
                 </div>
               </div>
             </div>
@@ -2323,42 +2400,42 @@ function App() {
           <div className="recommendation-card">
             <div className="rec-header">
               <span className="rec-badge">Best Option</span>
-              <h2>{results.recommendation.best.icon} {results.recommendation.best.name}</h2>
+              <h2>{displayResults.recommendation.best.icon} {displayResults.recommendation.best.name}</h2>
             </div>
-            <p className="rec-reason">{results.recommendation.reason}</p>
+            <p className="rec-reason">{displayResults.recommendation.reason}</p>
             <div className="rec-stats">
               <div className="rec-stat">
                 <span className="rec-stat-label">Net cost to you</span>
-                <span className="rec-stat-value">{fmtGBP(results.recommendation.best.costToYou)}</span>
+                <span className="rec-stat-value">{fmtGBP(displayResults.recommendation.best.costToYou)}</span>
               </div>
               <div className="rec-stat">
                 <span className="rec-stat-label">Efficiency score</span>
-                <span className="rec-stat-value rec-efficiency">{results.recommendation.best.efficiency.toFixed(2)}×</span>
+                <span className="rec-stat-value rec-efficiency">{displayResults.recommendation.best.efficiency.toFixed(2)}×</span>
               </div>
               <div className="rec-stat">
                 <span className="rec-stat-label">Projected pot</span>
-                <span className="rec-stat-value">{fmtGBP(results.recommendation.best.potAtRetirement)}</span>
+                <span className="rec-stat-value">{fmtGBP(displayResults.recommendation.best.potAtRetirement)}</span>
               </div>
               <div className="rec-stat">
                 <span className="rec-stat-label">Annual income</span>
-                <span className="rec-stat-value">{fmtGBP(results.recommendation.best.annualIncomeAtRetirement, 0)}/yr</span>
+                <span className="rec-stat-value">{fmtGBP(displayResults.recommendation.best.annualIncomeAtRetirement, 0)}/yr</span>
               </div>
             </div>
           </div>
 
           {/* Mix analysis */}
           <MixCard
-            mixData={results.mixData}
-            taxRate={results.taxSummary.marginalRate}
+            mixData={displayResults.mixData}
+            taxRate={displayResults.taxSummary.marginalRate}
             contribution={parseFloat(form.contribution) || 0}
-            years={results.years}
+            years={displayResults.years}
           />
 
           {/* Full comparison */}
-          <p className="results-heading">Full Comparison ({results.years} years — all values in today's money at {fmtPct(results.realReturnRate, 1)}/yr real growth)</p>
+          <p className="results-heading">Full Comparison ({displayResults.years} years — all values in today's money at {fmtPct(displayResults.realReturnRate, 1)}/yr real growth)</p>
           <div className="results-grid">
-            {results.options.map(o => (
-              <ResultCard key={o.id} option={o} maxEfficiency={results.maxEfficiency} years={results.years} />
+            {displayResults.options.map(o => (
+              <ResultCard key={o.id} option={o} maxEfficiency={displayResults.maxEfficiency} years={displayResults.years} />
             ))}
           </div>
 
