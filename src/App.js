@@ -568,6 +568,27 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
     }
   }
 
+  // ── Target Retirement Best: prioritise accessible income at target retirement age ──
+  // This alternative recommendation focuses on hitting your target income at your target
+  // retirement age, rather than maximising overall pot efficiency.
+  const targetBest = options.reduce((b, o) => o.earlyInc > (b.earlyInc || 0) ? o : b, options[0]);
+  let targetRecReason = '';
+  if (targetBest.id === 'addedpension') {
+    if (retireAge >= statePensionAge) {
+      targetRecReason = `For your retirement goal, Added Pension provides ${fmtGBP(targetBest.annualIncomeAtRetirement, 0)}/yr from age ${statePensionAge} — a guaranteed, CPI-linked income stream for life.`;
+    } else {
+      targetRecReason = `Added Pension locks until ${statePensionAge}, so it won't help reach your target at age ${retireAge}. Consider ISA or SIPP for immediate retirement access.`;
+    }
+  } else if (targetBest.id === 'sipp') {
+    if (retireAge >= 57) {
+      targetRecReason = `With SIPP, you'd have ${fmtGBP(targetBest.annualIncomeAtRetirement, 0)}/yr accessible from age 57 — matching your ${retireAge} retirement target with flexible, tax-efficient drawdown.`;
+    } else {
+      targetRecReason = `SIPP unlocks at 57, which is after your target retirement age (${retireAge}). Prioritise ISA for earlier access.`;
+    }
+  } else if (targetBest.id === 'isa') {
+    targetRecReason = `ISA provides the highest accessible income at age ${retireAge} — ${fmtGBP(targetBest.annualIncomeAtRetirement, 0)}/yr. Fully flexible, tax-free, and withdrawable at any age.`;
+  }
+
   // Tax summary helpers
   const effectivePA = getEffectivePA(taxBasis, taxInfo.pa);
   const effTaxRate = (salary > 0) ? ((incomeTax + ni) / salary) : 0;
@@ -636,7 +657,7 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
   return {
     options, maxEfficiency, fireNumber, years, retirementAge, mixData, existingDbPension, statePensionAge, statePension,
     inflationRate, realReturnRate, returnRate, actionPlan, phaseAllocations, contribution, salary, leaveYears: leaveYears,
-    recommendation: { best, reason: recReason },
+    recommendation: { best, reason: recReason, targetBest, targetReason: targetRecReason },
     taxSummary: { incomeTax, ni, takeHome, effectiveTaxRate: effTaxRate, marginalRate: taxRate, niRate, effectivePA, taxInfo, adjustedSalary: taxBasis, niableSalary: niBasis, salSacrifice, flatRateExpenses, hasDeductions },
     mortgageAnalysis,
     cashAnalysis: hasCash ? { cashReserve, monthlyExpenses, emergencyTarget, emergencyShortfall, emergencyOk } : null,
@@ -1667,6 +1688,7 @@ function App() {
   const [showPropertyDetails, setShowPropertyDetails] = useState(false);
   const [step, setStep] = useState(0);
   const [formCollapsed, setFormCollapsed] = useState(false);
+  const [optMode, setOptMode] = useState('maxReturn'); // 'maxReturn' | 'targetRetirement'
 
   const [results, setResults] = useState(null);
   const [errors, setErrors] = useState({});
@@ -2311,32 +2333,52 @@ function App() {
             </div>
           )}
 
-          {/* Recommendation */}
-          <div className="recommendation-card">
-            <div className="rec-header">
-              <span className="rec-badge">Best Option</span>
-              <h2>{displayResults.recommendation.best.icon} {displayResults.recommendation.best.name}</h2>
-            </div>
-            <p className="rec-reason">{displayResults.recommendation.reason}</p>
-            <div className="rec-stats">
-              <div className="rec-stat">
-                <span className="rec-stat-label">Net cost to you</span>
-                <span className="rec-stat-value">{fmtGBP(displayResults.recommendation.best.costToYou)}</span>
-              </div>
-              <div className="rec-stat">
-                <span className="rec-stat-label">Efficiency score</span>
-                <span className="rec-stat-value rec-efficiency">{displayResults.recommendation.best.efficiency.toFixed(2)}×</span>
-              </div>
-              <div className="rec-stat">
-                <span className="rec-stat-label">Projected pot</span>
-                <span className="rec-stat-value">{fmtGBP(displayResults.recommendation.best.potAtRetirement)}</span>
-              </div>
-              <div className="rec-stat">
-                <span className="rec-stat-label">Annual income</span>
-                <span className="rec-stat-value">{fmtGBP(displayResults.recommendation.best.annualIncomeAtRetirement, 0)}/yr</span>
-              </div>
-            </div>
+          {/* Optimisation Mode Toggle */}
+          <div className="opt-mode-toggle">
+            <button
+              className={`opt-toggle-btn${optMode === 'maxReturn' ? ' active' : ''}`}
+              onClick={() => setOptMode('maxReturn')}
+            >Max Return</button>
+            <button
+              className={`opt-toggle-btn${optMode === 'targetRetirement' ? ' active' : ''}`}
+              onClick={() => setOptMode('targetRetirement')}
+            >Target Retirement</button>
           </div>
+
+          {/* Recommendation */}
+          {(() => {
+            const activeRec = optMode === 'targetRetirement'
+              ? { best: displayResults.recommendation.targetBest, reason: displayResults.recommendation.targetReason }
+              : { best: displayResults.recommendation.best, reason: displayResults.recommendation.reason };
+            const badgeLabel = optMode === 'targetRetirement' ? 'Best for Retirement Goal' : 'Max Return';
+            return (
+              <div className="recommendation-card">
+                <div className="rec-header">
+                  <span className="rec-badge">{badgeLabel}</span>
+                  <h2>{activeRec.best.icon} {activeRec.best.name}</h2>
+                </div>
+                <p className="rec-reason">{activeRec.reason}</p>
+                <div className="rec-stats">
+                  <div className="rec-stat">
+                    <span className="rec-stat-label">Net cost to you</span>
+                    <span className="rec-stat-value">{fmtGBP(activeRec.best.costToYou)}</span>
+                  </div>
+                  <div className="rec-stat">
+                    <span className="rec-stat-label">Efficiency score</span>
+                    <span className="rec-stat-value rec-efficiency">{activeRec.best.efficiency.toFixed(2)}×</span>
+                  </div>
+                  <div className="rec-stat">
+                    <span className="rec-stat-label">Projected pot</span>
+                    <span className="rec-stat-value">{fmtGBP(activeRec.best.potAtRetirement)}</span>
+                  </div>
+                  <div className="rec-stat">
+                    <span className="rec-stat-label">Annual income</span>
+                    <span className="rec-stat-value">{fmtGBP(activeRec.best.annualIncomeAtRetirement, 0)}/yr</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Mix analysis */}
           <MixCard
