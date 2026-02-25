@@ -120,9 +120,11 @@ export function buildCivilianActionPlan({
   const totalYears = years > 0 ? years : Math.max(0, retirementAge - age);
   if (totalYears > 0) {
     const steps = buildPhaseSteps(contribution, totalYears);
-    const modeLabel = optMode === 'targetRetirement'
-      ? `How to allocate your ${fmtGBP(contribution)}/yr to reach your retirement target`
-      : `Exactly how to allocate your ${fmtGBP(contribution)}/yr for maximum efficiency`;
+    const modeLabel = optMode === 'maxReturn'
+      ? `Exactly how to allocate your ${fmtGBP(contribution)}/yr for maximum efficiency`
+      : optMode === 'earliestFire'
+        ? `How to allocate your ${fmtGBP(contribution)}/yr for earliest possible retirement`
+        : `How to allocate your ${fmtGBP(contribution)}/yr to reach your target retirement age`;
     phases.push({
       label: modeLabel,
       subtitle: `${totalYears} year${totalYears !== 1 ? 's' : ''}`,

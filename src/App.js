@@ -1731,11 +1731,18 @@ function App() {
   const [results, setResults] = useState(null);
   const [errors, setErrors] = useState({});
   const formRef = useRef(null);
+  const submittedParamsRef = useRef(null);
 
   // Clear previous results when serving toggle changes (forces recalculation)
   useEffect(() => {
     setResults(null);
   }, [form.isServing]);
+
+  // Recompute results when optMode changes (toggle between Max Return / Earliest FIRE / Target Age)
+  useEffect(() => {
+    if (!submittedParamsRef.current) return;
+    setResults(buildResults({ ...submittedParamsRef.current, optMode }));
+  }, [optMode]);
 
   const handleChange = (e) => {
     const { name, type, value, checked } = e.target;
@@ -1831,21 +1838,19 @@ function App() {
     const inflationRate     = parseFloat(form.inflationRate)     || 0.025;
     const targetIncome      = parseFloat(form.targetIncome)      || salary * 0.67;
 
-    setResults(buildResults({
+    // Store params for recomputation when optMode changes
+    const params = {
       salary, taxCode: form.taxCode, age,
       yearsService: form.isServing ? yearsService : 0,
       leaveAge: form.isServing ? leaveAge : retirementAge,
       apCostPer100: form.isServing ? apCostPer100 : 0,
       apPaymentType: form.isServing ? form.apPaymentType : 'single',
-      // Allow veterans/civilians to supply an existing DB pension value
-      // (e.g., MOD DB Pension — Annual Statement Value). Previously this
-      // was only passed through for active serving users which meant
-      // veterans couldn't see their DB pension in the retirement timeline.
       existingDbPension: existingDbPension,
       existingIsaPot, existingSippPot, statePensionAge, statePension, contribution, retirementAge, returnRate, inflationRate, targetIncome, salSacrifice, flatRateExpenses, manualTaxablePay, propertyValue, mortgageBalance, mortgageRate, mortgageTermYears, monthlyMortgage, propertyAppRate, cashReserve, monthlyExpenses,
       isServing: !!form.isServing,
-      optMode
-    }));
+    };
+    submittedParamsRef.current = params;
+    setResults(buildResults({ ...params, optMode }));
     setFormCollapsed(true);
     setTimeout(() => {
       if (taxSummaryRef.current) {
