@@ -510,26 +510,78 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
     }
   });
 
-  let best = options[0];
-  // If retirement target is before SPA, pick option maximizing early income (ISA/SIPP)
-  if (retireAge < statePensionAge || retireAge < 57) {
-    const byEarly = options.reduce((b, o) => (o.earlyInc > (b.earlyInc || 0) ? o : b), options[0]);
-    best = byEarly;
+  // ── Max Return Best: pick option with highest accessible income from its unlock age ──
+  const maxReturnBest = options.reduce((b, o) => (o.earlyInc > (b.earlyInc || 0) ? o : b), options[0]);
+  let maxReturnReason = '';
+  if (maxReturnBest.id === 'addedpension') {
+    maxReturnReason = `Added Pension provides ${fmtGBP(maxReturnBest.annualIncomeAtRetirement, 0)}/yr from age ${statePensionAge} — a guaranteed, CPI-linked income stream for life. With a ${fmtGBP(contribution)} annual contribution, you get maximum security and lifelong indexation.`;
+  } else if (maxReturnBest.id === 'sipp') {
+    maxReturnReason = `SIPP gives you ${fmtGBP(maxReturnBest.annualIncomeAtRetirement, 0)}/yr from age 57 onwards — the highest accessible income you can build with your current contributions. Flexible drawdown means you control your income.`;
   } else {
-    best = options[0];
+    maxReturnReason = `ISA provides ${fmtGBP(maxReturnBest.annualIncomeAtRetirement, 0)}/yr immediately accessible — the maximum you can withdraw tax-free at any age. Perfect for having money available when you need it.`;
   }
-  let recReason = '';
-  if (best.id === 'addedpension') {
-    if (edpEligible)
-      recReason = `You've hit the EDP point (age ${age}, ${yearsService} yrs). Every £1 of Added Pension boosts your tax-free EDP lump sum by £2.25, on top of a guaranteed CPI-linked pension for life. This is the single most powerful financial move available to you right now.`;
-    else if (taxRate >= 0.60)
-      recReason = `You're in the personal allowance taper zone — your effective marginal rate is 60%! Salary sacrifice into Added Pension saves 60p in every £1 of income tax alone, plus NI on top. This is the highest-efficiency savings option available.`;
-    else
-      recReason = `Salary sacrifice saves you ${fmtPct(taxRate)} income tax AND ${fmtPct(niRate)} NI on the full contribution. Your ${fmtGBP(contribution)} gross investment costs just ${fmtGBP(apNetCost)} net — buying a government-backed guaranteed pension indexed to inflation for life.`;
-  } else if (best.id === 'sipp') {
-    recReason = `As a ${taxRate >= 0.40 ? 'higher-rate' : 'basic-rate'} taxpayer, your SIPP converts ${fmtGBP(sippNetCost)} of net cost into ${fmtGBP(sippGross)} invested (growing to ${fmtGBP(sippPot)} by age ${retirementAge}).${taxRate >= 0.40 ? ` Remember to claim your extra ${fmtGBP(sippExtraRelief)}/yr back via Self Assessment.` : ''}`;
+
+  // ── Earliest FIRE: find which option lets you hit targetIncome at youngest age ──
+  const fireTarget = (targetIncome && targetIncome > 0) ? targetIncome : 0;
+  let earliestFireBest = options[0];
+  let earliestFireAge = Infinity;
+
+  if (fireTarget > 0) {
+    options.forEach(o => {
+      let age_at_target = Infinity;
+      if (o.id === 'isa') {
+        // ISA: accessible at any age, simple 4% calculation
+        const existing = existingIsaPot || 0;
+        const fvFactor = (years > 0 && realReturnRate !== 0)
+          ? ((Math.pow(1 + realReturnRate, years) - 1) / realReturnRate) * (1 + realReturnRate)
+          : years;
+        for (let yr = 1; yr <= 80; yr++) {
+          const pot = existing * Math.pow(1 + realReturnRate, yr) + contribution * fvFactor / (years > 0 ? years : 1) * yr;
+          if (pot * 0.04 >= fireTarget) { age_at_target = age + yr; break; }
+        }
+      } else if (o.id === 'sipp') {
+        // SIPP: accessible from 57, then 4% of drawdown pot minus tax (assumes ~20% tax in retirement)
+        if (57 > age) {
+          const yrs_to_57 = 57 - age;
+          const existing = existingSippPot || 0;
+          const sippGross = contribution * 1.25;
+          for (let yr = yrs_to_57; yr <= 80; yr++) {
+            const pot = existing * Math.pow(1 + realReturnRate, yr) + sippGross * ((Math.pow(1 + realReturnRate, Math.max(0, yr - 1)) - 1) / realReturnRate);
+            const drawdown = pot * 0.75 * 0.04;
+            const taxOnDraw = calcIncomeTax(drawdown, { pa: 12570, mode: 'normal' });
+            const netInc = Math.max(0, drawdown - taxOnDraw);
+            if (netInc >= fireTarget) { age_at_target = age + yr; break; }
+          }
+        }
+      } else if (o.id === 'addedpension') {
+        // AP: accessible from SPA, fixed pension + potential drawdown
+        if (statePensionAge > age) {
+          const yrs_to_spa = statePensionAge - age;
+          const apInc = o.annualIncomeAtRetirement || 0;
+          // For AP scenario, also count the ISA pot from contribution
+          const isaGross = contribution * 0.75; // rough split
+          for (let yr = yrs_to_spa; yr <= 80; yr++) {
+            const isaPot = isaGross * ((Math.pow(1 + realReturnRate, yr) - 1) / realReturnRate);
+            const isaInc = isaPot * 0.04;
+            if (apInc + isaInc >= fireTarget) { age_at_target = statePensionAge; break; }
+          }
+        }
+      }
+      o.fireAge = age_at_target;
+      if (age_at_target < earliestFireAge) {
+        earliestFireAge = age_at_target;
+        earliestFireBest = o;
+      }
+    });
+  }
+  let earliestFireReason = '';
+  if (fireTarget <= 0) {
+    earliestFireReason = `No target income set. This mode compares which vehicle reaches your FIRE goal at the earliest age.`;
+  } else if (earliestFireAge === Infinity) {
+    earliestFireReason = `With current contributions, none of the vehicles reach your £${fireTarget.toLocaleString()}/yr target income. Increase contributions or lower your retirement target.`;
   } else {
-    recReason = `With your current tax position, the ISA offers the best balance: tax-free growth, full flexibility, no lock-in, and accessible at any age. Ideal for medium-term goals or bridging to pension access age (57).`;
+    const veh = earliestFireBest.id === 'isa' ? 'ISA' : (earliestFireBest.id === 'sipp' ? 'SIPP' : 'Added Pension');
+    earliestFireReason = `${veh} lets you reach your £${fireTarget.toLocaleString()}/yr target income by age ${Math.floor(earliestFireAge)} — the earliest possible retirement with your current contributions.`;
   }
 
   const mixData = calcMixScenarios(contribution, years, realReturnRate, taxRate);
@@ -553,20 +605,6 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
   const cashAtRetirement = cashReserve; // kept at nominal (inflation erodes it)
   // FIRE number (4% rule) if user provided a target income
   const fireNumber = (targetIncome && targetIncome > 0) ? targetIncome * 25 : 0;
-
-  // If your target retirement is before SIPP access and your current accessible
-  // pot at that age falls short of FIRE, check whether investing everything
-  // into an ISA instead would hit the FIRE number by your target. If so,
-  // prioritise ISA in the recommendation (user can bridge SIPP -> ISA before target).
-  const isaOnlyAtRetire = isaPotAllIn || 0; // all contribution into ISA
-  const accessibleAtRetireCurrent = (retireAge >= 57) ? (isaOptPot + sippOptPot) : isaOptPot;
-  if (fireNumber > 0 && retireAge < 57 && accessibleAtRetireCurrent < fireNumber && isaOnlyAtRetire >= fireNumber) {
-    const isaOption = options.find(o => o.id === 'isa');
-    if (isaOption) {
-      best = isaOption;
-      recReason = `If you prioritise ISAs (investing your ${fmtGBP(contribution)}/yr into an ISA instead of a SIPP) you would reach your FIRE target by age ${retireAge} — consider prioritising ISA to make retirement at ${retireAge} possible.`;
-    }
-  }
 
   // ── Target Retirement Best: prioritise accessible income at target retirement age ──
   // This alternative recommendation focuses on hitting your target income at your target
@@ -657,7 +695,7 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
   return {
     options, maxEfficiency, fireNumber, years, retirementAge, mixData, existingDbPension, statePensionAge, statePension,
     inflationRate, realReturnRate, returnRate, actionPlan, phaseAllocations, contribution, salary, leaveYears: leaveYears,
-    recommendation: { best, reason: recReason, targetBest, targetReason: targetRecReason },
+    recommendation: { maxReturnBest, maxReturnReason, earliestFireBest, earliestFireReason, targetBest, targetReason: targetRecReason },
     taxSummary: { incomeTax, ni, takeHome, effectiveTaxRate: effTaxRate, marginalRate: taxRate, niRate, effectivePA, taxInfo, adjustedSalary: taxBasis, niableSalary: niBasis, salSacrifice, flatRateExpenses, hasDeductions },
     mortgageAnalysis,
     cashAnalysis: hasCash ? { cashReserve, monthlyExpenses, emergencyTarget, emergencyShortfall, emergencyOk } : null,
@@ -1688,7 +1726,7 @@ function App() {
   const [showPropertyDetails, setShowPropertyDetails] = useState(false);
   const [step, setStep] = useState(0);
   const [formCollapsed, setFormCollapsed] = useState(false);
-  const [optMode, setOptMode] = useState('maxReturn'); // 'maxReturn' | 'targetRetirement'
+  const [optMode, setOptMode] = useState('maxReturn'); // 'maxReturn' | 'earliestFire' | 'targetRetirement'
 
   const [results, setResults] = useState(null);
   const [errors, setErrors] = useState({});
@@ -2335,27 +2373,34 @@ function App() {
           )}
 
           {/* Optimisation Mode Toggle */}
+          {/* Optimisation Mode Toggle */}
           <div className="opt-mode-toggle">
             <button
               className={`opt-toggle-btn${optMode === 'maxReturn' ? ' active' : ''}`}
               onClick={() => setOptMode('maxReturn')}
             >Max Return</button>
             <button
+              className={`opt-toggle-btn${optMode === 'earliestFire' ? ' active' : ''}`}
+              onClick={() => setOptMode('earliestFire')}
+            >Earliest FIRE</button>
+            <button
               className={`opt-toggle-btn${optMode === 'targetRetirement' ? ' active' : ''}`}
               onClick={() => setOptMode('targetRetirement')}
-            >Target Retirement</button>
+            >Target Age</button>
           </div>
 
           {/* Recommendation */}
           {(() => {
-            const activeRec = optMode === 'targetRetirement'
-              ? { best: displayResults.recommendation.targetBest, reason: displayResults.recommendation.targetReason }
-              : { best: displayResults.recommendation.best, reason: displayResults.recommendation.reason };
-            const badgeLabel = optMode === 'targetRetirement' ? 'Best for Retirement Goal' : 'Max Return';
+            const modeMap = {
+              maxReturn:        { best: displayResults.recommendation.maxReturnBest,    reason: displayResults.recommendation.maxReturnReason,    badge: 'Max Return' },
+              earliestFire:     { best: displayResults.recommendation.earliestFireBest, reason: displayResults.recommendation.earliestFireReason, badge: 'Earliest FIRE' },
+              targetRetirement: { best: displayResults.recommendation.targetBest,       reason: displayResults.recommendation.targetReason,       badge: 'Best for Target Age' },
+            };
+            const activeRec = modeMap[optMode] || modeMap.maxReturn;
             return (
               <div className="recommendation-card">
                 <div className="rec-header">
-                  <span className="rec-badge">{badgeLabel}</span>
+                  <span className="rec-badge">{activeRec.badge}</span>
                   <h2>{activeRec.best.icon} {activeRec.best.name}</h2>
                 </div>
                 <p className="rec-reason">{activeRec.reason}</p>

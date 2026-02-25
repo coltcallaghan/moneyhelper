@@ -123,25 +123,25 @@ export function buildMODActionPlan({
     const isaStepBudget = remaining - (sippStep?.netAlloc || 0);
     const isaStep = buildISAStepMOD(isaStepBudget);
 
-    if (optMode === 'targetRetirement') {
-      // Target Retirement: ISA first (accessible at any age), then SIPP
-      if (isaStep) {
-        steps.push(isaStep);
-        remaining -= isaStep.netAlloc;
-      }
+    if (optMode === 'maxReturn') {
+      // Max Return: SIPP first (tax efficiency maximises long-run pot), then ISA
       if (sippStep) {
         steps.push(sippStep);
         remaining -= sippStep.netAlloc;
+      }
+      if (isaStep) {
+        steps.push(isaStep);
+        remaining -= isaStep.netAlloc;
       }
     } else {
-      // Max Return (default): SIPP first (tax efficiency), then ISA
-      if (sippStep) {
-        steps.push(sippStep);
-        remaining -= sippStep.netAlloc;
-      }
+      // Earliest FIRE & Target Age: ISA first (accessible at any age), then SIPP
       if (isaStep) {
         steps.push(isaStep);
         remaining -= isaStep.netAlloc;
+      }
+      if (sippStep) {
+        steps.push(sippStep);
+        remaining -= sippStep.netAlloc;
       }
     }
 
