@@ -258,7 +258,7 @@ function computeLabelPositions(markers, threshold = 2) {
 // ─────────────────────────────────────────────────────────────────────────────
 // CORE CALCULATION ENGINE
 // ─────────────────────────────────────────────────────────────────────────────
-function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer100, apPaymentType, existingDbPension, existingIsaPot, existingSippPot, statePensionAge, statePension, contribution, retirementAge, returnRate, inflationRate, targetIncome, salSacrifice = 0, flatRateExpenses = 0, manualTaxablePay = 0, propertyValue = 0, mortgageBalance = 0, mortgageRate = 0, mortgageTermYears = 0, monthlyMortgage = 0, propertyAppRate = 0.02, cashReserve = 0, monthlyExpenses = 0, isServing = false, optMode = 'maxReturn' }) {
+function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer100, apPaymentType, existingDbPension, existingIsaPot, existingSippPot, statePensionAge, statePension, contribution, retirementAge, returnRate, inflationRate, targetIncome, salSacrifice = 0, flatRateExpenses = 0, manualTaxablePay = 0, propertyValue = 0, mortgageBalance = 0, mortgageRate = 0, mortgageTermYears = 0, monthlyMortgage = 0, propertyAppRate = 0.02, cashReserve = 0, monthlyExpenses = 0, isServing = false }) {
   const taxInfo  = parseTaxCode(taxCode);
   const years    = Math.max(0, retirementAge - age);
 
@@ -346,38 +346,51 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
       limitExceeded: false, limitNote: 'Not available unless currently serving',
     };
   }
-  // ── Action Plan: Use separate logic for MOD and civilian users ──
-  let actionPlan;
-  if (isServing && typeof leaveAge !== 'undefined' && typeof yearsService !== 'undefined' && leaveAge > age) {
-    // MOD user (serving)
-    actionPlan = buildMODActionPlan({
-      contribution, years, realReturnRate, taxRate, niRate, age, leaveAge, retirementAge,
-      apPaymentType, apCostPer100, sippNetLimit, fmtGBP, fmtPct, projectPot,
-      addedPension, apMaxContrib, costPer100actual, AP_LIFETIME_MAX, alreadyLeft, yearsService, optMode
-    });
-  } else {
-    // Civilian or veteran
-    actionPlan = buildCivilianActionPlan({
-      contribution, years, realReturnRate, taxRate, niRate, age, retirementAge,
-      sippNetLimit, fmtGBP, fmtPct, projectPot, alreadyLeft, optMode
-    });
+  // ── Action Plan: Compute all 3 modes at once ──
+  const MODES = ['maxReturn', 'earliestFire', 'targetRetirement'];
+  const modeData = {};
+
+  for (const mode of MODES) {
+    let ap;
+    if (isServing && typeof leaveAge !== 'undefined' && typeof yearsService !== 'undefined' && leaveAge > age) {
+      // MOD user (serving)
+      ap = buildMODActionPlan({
+        contribution, years, realReturnRate, taxRate, niRate, age, leaveAge, retirementAge,
+        apPaymentType, apCostPer100, sippNetLimit, fmtGBP, fmtPct, projectPot,
+        addedPension, apMaxContrib, costPer100actual, AP_LIFETIME_MAX, alreadyLeft, yearsService, optMode: mode
+      });
+    } else {
+      // Civilian or veteran
+      ap = buildCivilianActionPlan({
+        contribution, years, realReturnRate, taxRate, niRate, age, retirementAge,
+        sippNetLimit, fmtGBP, fmtPct, projectPot, alreadyLeft, optMode: mode
+      });
+    }
+
+    // Build phaseAllocations for this mode
+    let pa = [];
+    if (ap && ap.phases) {
+      let cumulativeYears = 0;
+      pa = ap.phases.map(p => {
+        const phaseStartAge = age + cumulativeYears;
+        const phaseEndAge   = phaseStartAge + p.years;
+        cumulativeYears    += p.years;
+        return {
+          startAge:  phaseStartAge,
+          endAge:    phaseEndAge,
+          ap:        p.steps.find(s => s.vehicle === 'AFPS 15 Added Pension')?.gross ?? 0,
+          sippNet:   p.steps.find(s => s.vehicle === 'SIPP (Private Pension)')?.gross ?? 0,
+          sippGross: (p.steps.find(s => s.vehicle === 'SIPP (Private Pension)')?.gross ?? 0) * 1.25,
+          isa:       p.steps.find(s => s.vehicle === 'Stocks & Shares ISA')?.gross ?? 0
+        };
+      });
+    }
+    modeData[mode] = { actionPlan: ap, phaseAllocations: pa };
   }
-  if (actionPlan && actionPlan.phases) {
-    let cumulativeYears = 0;
-    phaseAllocations = actionPlan.phases.map(p => {
-      const phaseStartAge = age + cumulativeYears;
-      const phaseEndAge   = phaseStartAge + p.years;
-      cumulativeYears    += p.years;
-      return {
-        startAge:  phaseStartAge,
-        endAge:    phaseEndAge,
-        ap:        p.steps.find(s => s.vehicle === 'AFPS 15 Added Pension')?.gross ?? 0,
-        sippNet:   p.steps.find(s => s.vehicle === 'SIPP (Private Pension)')?.gross ?? 0,
-        sippGross: (p.steps.find(s => s.vehicle === 'SIPP (Private Pension)')?.gross ?? 0) * 1.25,
-        isa:       p.steps.find(s => s.vehicle === 'Stocks & Shares ISA')?.gross ?? 0
-      };
-    });
-  }
+
+  // Use maxReturn as the default for backward compat
+  const actionPlan = modeData.maxReturn.actionPlan;
+  phaseAllocations = modeData.maxReturn.phaseAllocations;
 
   // ── ISA calculation using actual phase allocations ───────────────────────
   const isaLimit = 20000;
@@ -701,6 +714,7 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
     cashAnalysis: hasCash ? { cashReserve, monthlyExpenses, emergencyTarget, emergencyShortfall, emergencyOk } : null,
     netWorth: { isaOptPot, sippOptPot, apOptPot, cashAtRetirement, propertyEquityAtRetirement, liquidWealth, totalNetWorth, dbOptPot },
     sippNetLimit, apMaxContrib,
+    modes: modeData,  // { maxReturn: {actionPlan, phaseAllocations}, earliestFire: {...}, targetRetirement: {...} }
   };
 }
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1098,9 +1112,13 @@ function RetirementTimelineChart({ results, form }) {
           {(() => {
             const raw = [];
             raw.push({ age: targetRetAge, key: 'target', label: `Target ${targetRetAge}`, color: '#60a5fa' });
-            raw.push({ age: 57, key: 'sipp', label: `SIPP ${57}`, color: '#a78bfa' });
+            raw.push({ age: 57, key: 'sipp', label: `SIPP 57`, color: '#a78bfa' });
             raw.push({ age: statePensionAge, key: 'spa', label: `SPA ${statePensionAge}`, color: '#f59e0b' });
-            if (retirePossibleAge) raw.push({ age: retirePossibleAge, key: 'retire', label: `Retire ${retirePossibleAge}`, color: '#22d3ee' });
+            if (retirePossibleAge) {
+              // If retire age is 57, label it as "SIPP 57" (same as SIPP unlock), otherwise "Retire X"
+              const retireLabel = retirePossibleAge === 57 ? 'SIPP 57' : `Retire ${retirePossibleAge}`;
+              raw.push({ age: retirePossibleAge, key: 'retire', label: retireLabel, color: '#22d3ee' });
+            }
 
             const priority = { retire: 1, target: 2, sipp: 3, spa: 4 };
             const byAge = {};
@@ -1726,23 +1744,16 @@ function App() {
   const [showPropertyDetails, setShowPropertyDetails] = useState(false);
   const [step, setStep] = useState(0);
   const [formCollapsed, setFormCollapsed] = useState(false);
-  const [optMode, setOptMode] = useState('maxReturn'); // 'maxReturn' | 'earliestFire' | 'targetRetirement'
+  const [optMode, setOptMode] = useState('targetRetirement'); // 'maxReturn' | 'earliestFire' | 'targetRetirement'
 
   const [results, setResults] = useState(null);
   const [errors, setErrors] = useState({});
   const formRef = useRef(null);
-  const submittedParamsRef = useRef(null);
 
   // Clear previous results when serving toggle changes (forces recalculation)
   useEffect(() => {
     setResults(null);
   }, [form.isServing]);
-
-  // Recompute results when optMode changes (toggle between Max Return / Earliest FIRE / Target Age)
-  useEffect(() => {
-    if (!submittedParamsRef.current) return;
-    setResults(buildResults({ ...submittedParamsRef.current, optMode }));
-  }, [optMode]);
 
   const handleChange = (e) => {
     const { name, type, value, checked } = e.target;
@@ -1838,7 +1849,6 @@ function App() {
     const inflationRate     = parseFloat(form.inflationRate)     || 0.025;
     const targetIncome      = parseFloat(form.targetIncome)      || salary * 0.67;
 
-    // Store params for recomputation when optMode changes
     const params = {
       salary, taxCode: form.taxCode, age,
       yearsService: form.isServing ? yearsService : 0,
@@ -1849,8 +1859,7 @@ function App() {
       existingIsaPot, existingSippPot, statePensionAge, statePension, contribution, retirementAge, returnRate, inflationRate, targetIncome, salSacrifice, flatRateExpenses, manualTaxablePay, propertyValue, mortgageBalance, mortgageRate, mortgageTermYears, monthlyMortgage, propertyAppRate, cashReserve, monthlyExpenses,
       isServing: !!form.isServing,
     };
-    submittedParamsRef.current = params;
-    setResults(buildResults({ ...params, optMode }));
+    setResults(buildResults(params));
     setFormCollapsed(true);
     setTimeout(() => {
       if (taxSummaryRef.current) {
@@ -2144,7 +2153,13 @@ function App() {
 
       <div className="app-col-right">
       {/* ── Results ── */}
-      {displayResults && formCollapsed && (
+      {displayResults && formCollapsed && (() => {
+        const activeResults = displayResults ? {
+          ...displayResults,
+          actionPlan: displayResults.modes?.[optMode]?.actionPlan ?? displayResults.actionPlan,
+          phaseAllocations: displayResults.modes?.[optMode]?.phaseAllocations ?? displayResults.phaseAllocations,
+        } : null;
+        return (
         <div className="results-section">
 
           {/* Tax summary */}
@@ -2223,17 +2238,33 @@ function App() {
             </div>
           )}
 
+          {/* Optimisation Mode Toggle */}
+          <div className="opt-mode-toggle">
+            <button
+              className={`opt-toggle-btn${optMode === 'targetRetirement' ? ' active' : ''}`}
+              onClick={() => setOptMode('targetRetirement')}
+            >Target Age</button>
+            <button
+              className={`opt-toggle-btn${optMode === 'maxReturn' ? ' active' : ''}`}
+              onClick={() => setOptMode('maxReturn')}
+            >Max Return</button>
+            <button
+              className={`opt-toggle-btn${optMode === 'earliestFire' ? ' active' : ''}`}
+              onClick={() => setOptMode('earliestFire')}
+            >Earliest FIRE</button>
+          </div>
+
           {/* Action Plan */}
-          <ActionPlanCard results={results} />
+          <ActionPlanCard results={activeResults} />
 
           {/* Retirement Income Timeline */}
-          <RetirementTimelineChart results={results} form={form} />
+          <RetirementTimelineChart results={activeResults} form={form} />
 
           {/* Total Wealth */}
-          <TotalWealthChart results={results} form={form} />
+          <TotalWealthChart results={activeResults} form={form} />
 
           {/* Total Retirement Picture */}
-          <RetirementPictureCard results={results} isServing={form.isServing} />
+          <RetirementPictureCard results={activeResults} isServing={form.isServing} />
 
           {/* Mortgage vs Invest Analysis */}
           {displayResults.mortgageAnalysis && (
@@ -2377,23 +2408,6 @@ function App() {
             </div>
           )}
 
-          {/* Optimisation Mode Toggle */}
-          {/* Optimisation Mode Toggle */}
-          <div className="opt-mode-toggle">
-            <button
-              className={`opt-toggle-btn${optMode === 'maxReturn' ? ' active' : ''}`}
-              onClick={() => setOptMode('maxReturn')}
-            >Max Return</button>
-            <button
-              className={`opt-toggle-btn${optMode === 'earliestFire' ? ' active' : ''}`}
-              onClick={() => setOptMode('earliestFire')}
-            >Earliest FIRE</button>
-            <button
-              className={`opt-toggle-btn${optMode === 'targetRetirement' ? ' active' : ''}`}
-              onClick={() => setOptMode('targetRetirement')}
-            >Target Age</button>
-          </div>
-
           {/* Recommendation */}
           {(() => {
             const modeMap = {
@@ -2452,7 +2466,8 @@ function App() {
             Uses 2025/26 UK tax rates. Investment returns are not guaranteed. AFPS 15 and State Pension are CPI-linked (constant in real terms). Seek independent financial advice.
           </p>
         </div>
-      )}
+        );
+      })()}
 
 
       </div>{/* end app-col-right */}

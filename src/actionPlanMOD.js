@@ -14,9 +14,13 @@ export function buildMODActionPlan({
       // AP — only if still serving in this phase. Decide dynamically whether AP
       // is actually more efficient than SIPP for this budget; avoid always
       // prioritising AP just because it's available.
-      // In targetRetirement mode, skip AP if retirement age is before state pension (AP locked until then)
-      const skipAPForTargetRetire = optMode === 'targetRetirement' && retirementAge < 67;
-      if (includeAP && !alreadyLeft && leaveYears > 0 && remaining > 0 && !skipAPForTargetRetire) {
+      // Critical: AP is not accessible until State Pension Age (67). If retiring before 67,
+      // the pension is locked away and inaccessible. This makes AP poor for early retirement.
+      const yearsUntilSPA = Math.max(0, 67 - age);
+      const retiresTooEarlyForAP = retirementAge < 67;
+      const skipAPForEarlyRetire = (optMode === 'earliestFire' || optMode === 'targetRetirement') && retiresTooEarlyForAP;
+
+      if (includeAP && !alreadyLeft && leaveYears > 0 && remaining > 0 && !skipAPForEarlyRetire) {
         const apAlloc = Math.min(remaining, apMaxContrib);
         if (apAlloc > 0) {
           const apNet = apAlloc * (1 - taxRate - niRate);
@@ -25,8 +29,16 @@ export function buildMODActionPlan({
           const apPensionForPhase = Math.min(apBPY * 100, AP_LIFETIME_MAX);
 
           // Estimate AP 'efficiency' comparable to other wrappers: treat AP pension as a capital-equivalent (×25)
+          // BUT: account for the delay if retiring before SPA (67)
           const apCapitalEq = apPensionForPhase * 25; // capital equivalent of the guaranteed pension
-          const apEfficiency = apNet > 0 ? (apCapitalEq / apNet) : 0;
+          let apEfficiency = apNet > 0 ? (apCapitalEq / apNet) : 0;
+
+          // Discount AP efficiency if retiring before SPA: money is inaccessible during those years
+          if (retiresTooEarlyForAP && yearsUntilSPA > 0) {
+            // Reduce efficiency by treating it as a delayed investment (7-year delay on average)
+            const delayPenalty = Math.pow(1 + realReturnRate, -yearsUntilSPA); // discount for delay
+            apEfficiency = apEfficiency * delayPenalty;
+          }
 
           // Quick estimate for SIPP efficiency on the same budget (if all allocated instead to SIPP)
           const sippGrossIfAll = apAlloc * 1.25;
@@ -36,7 +48,9 @@ export function buildMODActionPlan({
 
           // Only include AP if it looks reasonably efficient compared with SIPP, or
           // if the marginal tax/NI benefits are very large (i.e., taxRate+niRate high).
-          const includeAPActual = (apEfficiency >= sippEfficiency * 0.9) || ((taxRate + niRate) >= 0.5);
+          // If retiring before SPA, require AP to be MORE efficient (not just 90% of SIPP)
+          const minEfficiencyRatio = retiresTooEarlyForAP ? 1.0 : 0.9; // stricter for early retirement
+          const includeAPActual = (apEfficiency >= sippEfficiency * minEfficiencyRatio) || ((taxRate + niRate) >= 0.5 && !retiresTooEarlyForAP);
 
           if (includeAPActual) {
             steps.push({
@@ -118,27 +132,27 @@ export function buildMODActionPlan({
       };
     };
 
-    // Build both and add in appropriate order
-    const sippStep = buildSIPPStepMOD(remaining);
-    const isaStepBudget = remaining - (sippStep?.netAlloc || 0);
-    const isaStep = buildISAStepMOD(isaStepBudget);
-
+    // Build and add in appropriate order
     if (optMode === 'maxReturn') {
       // Max Return: SIPP first (tax efficiency maximises long-run pot), then ISA
+      const sippStep = buildSIPPStepMOD(remaining);
       if (sippStep) {
         steps.push(sippStep);
         remaining -= sippStep.netAlloc;
       }
+      const isaStep = buildISAStepMOD(remaining);
       if (isaStep) {
         steps.push(isaStep);
         remaining -= isaStep.netAlloc;
       }
     } else {
       // Earliest FIRE & Target Age: ISA first (accessible at any age), then SIPP
+      const isaStep = buildISAStepMOD(remaining);
       if (isaStep) {
         steps.push(isaStep);
         remaining -= isaStep.netAlloc;
       }
+      const sippStep = buildSIPPStepMOD(remaining);
       if (sippStep) {
         steps.push(sippStep);
         remaining -= sippStep.netAlloc;
@@ -182,13 +196,22 @@ export function buildMODActionPlan({
     const phase2Start = alreadyLeft ? age : servingUntil;
     if (phase2Years > 0) {
       const phase2Steps = buildPhaseSteps(contribution, false, phase2Years);
+
+      // Warning if retiring before SIPP unlock age (57)
+      const sippUnlockAge = 57;
+      const retireBeforeSippUnlock = retirementAge < sippUnlockAge;
+      let subtitleSuffix = '';
+      if (retireBeforeSippUnlock) {
+        subtitleSuffix = ` ⚠️ Retiring at ${retirementAge} means SIPP is inaccessible until 57 — prioritize ISA (£20k/yr limit) for accessible income during ages ${phase2Start}-56.`;
+      }
+
       phases.push({
         label: alreadyLeft
           ? `Now to Retirement (age ${phase2Start}–${retirementAge})`
           : `After Leaving MOD (age ${phase2Start}–${retirementAge})`,
-        subtitle: alreadyLeft
+        subtitle: (alreadyLeft
           ? `${phase2Years} year${phase2Years !== 1 ? 's' : ''} — no AP available, redirect full budget to SIPP + ISA`
-          : `${phase2Years} year${phase2Years !== 1 ? 's' : ''} — AP no longer available, full ${fmtGBP(contribution)}/yr redirected to SIPP + ISA`,
+          : `${phase2Years} year${phase2Years !== 1 ? 's' : ''} — AP no longer available, full ${fmtGBP(contribution)}/yr redirected to SIPP + ISA`) + subtitleSuffix,
         years: phase2Years, icon: alreadyLeft ? '📋' : '🔄',
         steps: phase2Steps,
         totalGross: phase2Steps.reduce((s, st) => s + st.gross, 0),

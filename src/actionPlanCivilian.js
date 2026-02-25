@@ -74,27 +74,27 @@ export function buildCivilianActionPlan({
       };
     };
 
-    // Build both options and add in appropriate order
-    const sippStep = buildSIPPStep(remaining);
-    const isaStepBudget = remaining - (sippStep?.netAlloc || 0);
-    const isaStep = buildISAStep(isaStepBudget);
-
+    // Build in appropriate order based on mode
     if (optMode === 'maxReturn') {
       // Max Return: SIPP first (tax efficiency maximises long-run pot), then ISA
+      const sippStep = buildSIPPStep(remaining);
       if (sippStep) {
         steps.push(sippStep);
         remaining -= sippStep.netAlloc;
       }
+      const isaStep = buildISAStep(remaining);
       if (isaStep) {
         steps.push(isaStep);
         remaining -= isaStep.netAlloc;
       }
     } else {
       // Earliest FIRE & Target Retirement: ISA first (accessible at any age), then SIPP
+      const isaStep = buildISAStep(remaining);
       if (isaStep) {
         steps.push(isaStep);
         remaining -= isaStep.netAlloc;
       }
+      const sippStep = buildSIPPStep(remaining);
       if (sippStep) {
         steps.push(sippStep);
         remaining -= sippStep.netAlloc;

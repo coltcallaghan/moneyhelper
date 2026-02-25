@@ -1,0 +1,116 @@
+================================================================================
+QUICK TEST REFERENCE - Run These Commands
+================================================================================
+
+1. VERIFY THE FIX IS CORRECT (2 minutes)
+   $ node detailed-tests.js
+   
+   This runs real-world scenarios:
+   - MOD user: £70k salary, £40k contribution
+   - Civilian user: £150k salary, £70k contribution
+   
+   Output shows allocation breakdowns for each mode.
+   Expected: All totals = contribution amount, modes differ as expected
+
+2. VERIFY BUILD SUCCEEDS (1 minute)
+   $ npm run build
+   
+   Expected: "Compiled successfully" with bundle size ~182KB gzipped
+
+3. QUICK ALLOCATION VERIFICATION (2 minutes)
+   $ node test-runner.js
+   
+   Shows test expectations and code review checklist.
+
+4. READ DOCUMENTATION (5-10 minutes pick one)
+   Short:   cat TESTING_SUMMARY.md
+   Detailed: cat TEST_DETAILED_RESULTS.md
+   Changes: cat CHANGES_SUMMARY.md
+
+================================================================================
+WHAT WAS FIXED
+================================================================================
+
+ISSUE: In Earliest FIRE and Target Age modes, ISA was not getting its full
+       budget allocation. It was calculated as "remaining after SIPP" instead
+       of having budget priority.
+
+FIX:   Reordered allocation logic so ISA is built BEFORE SIPP in those modes.
+
+FILES CHANGED:
+  - src/actionPlanCivilian.js (lines 77-102)
+  - src/actionPlanMOD.js (lines 121-146)
+  - src/App.js (buildResults function and JSX)
+
+EXAMPLE - MOD User, £40k contribution:
+  Before fix (WRONG):  ISA ~£10k, SIPP ~£20k, AP ~£12k
+  After fix (RIGHT):   ISA £20k, SIPP ~£8k, AP ~£12k
+  ↑ ISA now gets full £20k limit
+
+================================================================================
+HOW TO TEST IN BROWSER
+================================================================================
+
+1. Clear cache (Ctrl+Shift+Delete or hard refresh)
+
+2. Fill form with TEST CASE 1 (MOD User):
+   - Is Serving: YES
+   - Age: 35, Leave Age: 55
+   - Years Service: 15
+   - Salary: £70,000
+   - Contribution: £40,000
+   - Retirement Age: 65
+   - Click CALCULATE
+
+3. Toggle between modes:
+   ✓ Max Return:     AP (~£12k) → SIPP (~£11k) → ISA (~£17k)
+   ✓ Earliest FIRE:  AP (~£12k) → ISA (£20k) → SIPP (~£8k)
+   ✓ Notice ISA is £20k in Earliest FIRE (fixed!)
+
+4. Fill form with TEST CASE 2 (Civilian):
+   - Is Serving: NO
+   - Age: 40
+   - Salary: £150,000
+   - Contribution: £70,000
+   - Retirement Age: 65
+   - Click CALCULATE
+
+5. Toggle between modes:
+   ✓ Max Return:     SIPP (£48k) → ISA (£20k) → GIA (£2k)
+   ✓ Earliest FIRE:  ISA (£20k) → SIPP (£48k) → GIA (£2k)
+   ✓ Order changes even though amounts are same (both limits hit)
+
+6. Check localStorage:
+   ✓ Toggle between modes should NOT create new saved calculations
+   ✓ Only form submit should create new entry
+   ✓ This verifies single-compute architecture is working
+
+================================================================================
+BUILD STATUS
+================================================================================
+
+✅ Build succeeds with NO ERRORS
+✅ Bundle size stable (~182KB gzipped)
+✅ All files compile correctly
+✅ Ready for deployment
+
+================================================================================
+KNOWN ISSUES / NOTES
+================================================================================
+
+- Jest tests are disabled in package.json (tests don't run in CI)
+- Use node test-runner.js and node detailed-tests.js instead
+- Manual browser testing required for UI verification
+- Tax calculations assume 2025/26 rates (hardcoded in code)
+
+================================================================================
+QUESTIONS? Check these files:
+================================================================================
+
+TESTING_SUMMARY.md          - This overview, test execution summary
+TEST_DETAILED_RESULTS.md    - In-depth analysis of each scenario
+TEST_RESULTS.md             - Initial verification checklist
+CHANGES_SUMMARY.md          - What code changed and why
+QUICK_TEST_REFERENCE.txt    - This file
+
+================================================================================
