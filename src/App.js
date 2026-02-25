@@ -258,7 +258,7 @@ function computeLabelPositions(markers, threshold = 2) {
 // ─────────────────────────────────────────────────────────────────────────────
 // CORE CALCULATION ENGINE
 // ─────────────────────────────────────────────────────────────────────────────
-function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer100, apPaymentType, existingDbPension, existingIsaPot, existingSippPot, statePensionAge, statePension, contribution, retirementAge, returnRate, inflationRate, targetIncome, salSacrifice = 0, flatRateExpenses = 0, manualTaxablePay = 0, propertyValue = 0, mortgageBalance = 0, mortgageRate = 0, mortgageTermYears = 0, monthlyMortgage = 0, propertyAppRate = 0.02, cashReserve = 0, monthlyExpenses = 0, isServing = false }) {
+function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer100, apPaymentType, existingDbPension, existingIsaPot, existingSippPot, statePensionAge, statePension, contribution, retirementAge, returnRate, inflationRate, targetIncome, salSacrifice = 0, flatRateExpenses = 0, manualTaxablePay = 0, propertyValue = 0, mortgageBalance = 0, mortgageRate = 0, mortgageTermYears = 0, monthlyMortgage = 0, propertyAppRate = 0.02, cashReserve = 0, monthlyExpenses = 0, isServing = false, optMode = 'maxReturn' }) {
   const taxInfo  = parseTaxCode(taxCode);
   const years    = Math.max(0, retirementAge - age);
 
@@ -353,13 +353,13 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
     actionPlan = buildMODActionPlan({
       contribution, years, realReturnRate, taxRate, niRate, age, leaveAge, retirementAge,
       apPaymentType, apCostPer100, sippNetLimit, fmtGBP, fmtPct, projectPot,
-      addedPension, apMaxContrib, costPer100actual, AP_LIFETIME_MAX, alreadyLeft, yearsService
+      addedPension, apMaxContrib, costPer100actual, AP_LIFETIME_MAX, alreadyLeft, yearsService, optMode
     });
   } else {
     // Civilian or veteran
     actionPlan = buildCivilianActionPlan({
       contribution, years, realReturnRate, taxRate, niRate, age, retirementAge,
-      sippNetLimit, fmtGBP, fmtPct, projectPot, alreadyLeft
+      sippNetLimit, fmtGBP, fmtPct, projectPot, alreadyLeft, optMode
     });
   }
   if (actionPlan && actionPlan.phases) {
@@ -1805,7 +1805,8 @@ function App() {
       // veterans couldn't see their DB pension in the retirement timeline.
       existingDbPension: existingDbPension,
       existingIsaPot, existingSippPot, statePensionAge, statePension, contribution, retirementAge, returnRate, inflationRate, targetIncome, salSacrifice, flatRateExpenses, manualTaxablePay, propertyValue, mortgageBalance, mortgageRate, mortgageTermYears, monthlyMortgage, propertyAppRate, cashReserve, monthlyExpenses,
-      isServing: !!form.isServing
+      isServing: !!form.isServing,
+      optMode
     }));
     setFormCollapsed(true);
     setTimeout(() => {
