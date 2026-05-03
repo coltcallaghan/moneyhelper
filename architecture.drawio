@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169" math="0" shadow="0">
+  <root>
+    <mxCell id="0" />
+    <mxCell id="1" parent="0" />
+
+    <!-- Title -->
+    <mxCell id="title" value="Soldiers Fortune — Architecture" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=22;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="400" y="30" width="600" height="40" as="geometry" />
+    </mxCell>
+
+    <!-- index.js -->
+    <mxCell id="index" value="index.js" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+      <mxGeometry x="600" y="100" width="200" height="60" as="geometry" />
+    </mxCell>
+
+    <!-- App.js -->
+    <mxCell id="app" value="App.js" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=15;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="550" y="230" width="300" height="70" as="geometry" />
+    </mxCell>
+
+    <!-- 4-Step Wizard -->
+    <mxCell id="wizard" value="4-Step Wizard" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="100" y="390" width="200" height="60" as="geometry" />
+    </mxCell>
+
+    <!-- Calculation Engine -->
+    <mxCell id="calc" value="Calculation Engine" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="550" y="390" width="300" height="60" as="geometry" />
+    </mxCell>
+
+    <!-- Results Display -->
+    <mxCell id="results" value="Results Display" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="1000" y="390" width="200" height="60" as="geometry" />
+    </mxCell>
+
+    <!-- Shared UI -->
+    <mxCell id="ui" value="Shared UI Components" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="100" y="540" width="200" height="60" as="geometry" />
+    </mxCell>
+
+    <!-- Action Plans -->
+    <mxCell id="plans" value="Action Plans&#xa;(MOD &amp; Civilian)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="550" y="540" width="300" height="60" as="geometry" />
+    </mxCell>
+
+    <!-- localStorage — far right, clear of Results Display -->
+    <mxCell id="storage" value="localStorage" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=13;" vertex="1" parent="1">
+      <mxGeometry x="1300" y="225" width="200" height="75" as="geometry" />
+    </mxCell>
+
+    <!-- GitHub Pages — bottom centre -->
+    <mxCell id="deploy" value="GitHub Pages" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+    </mxCell>
+
+    <!-- index → App -->
+    <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="index" target="app" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- App → Wizard -->
+    <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="app" target="wizard" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- App → Calc Engine (one-way) -->
+    <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="app" target="calc" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- Calc → Action Plans -->
+    <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="calc" target="plans" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- Calc → Results -->
+    <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="calc" target="results" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- Action Plans → Results -->
+    <mxCell id="e6" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="plans" target="results" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- App → Shared UI -->
+    <mxCell id="e7" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="app" target="ui" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- App ↔ localStorage — explicit waypoints to stay above everything -->
+    <mxCell id="e8" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;startArrow=block;startFill=0;endFill=0;" edge="1" source="app" target="storage" parent="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="1400" y="265" />
+        </Array>
+      </mxGeometry>
+    </mxCell>
+
+    <!-- App → GitHub Pages — explicit waypoints to go straight down left side -->
+    <mxCell id="e9" style="edgeStyle=orthogonalEdgeStyle;dashed=1;" edge="1" source="app" target="deploy" parent="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="480" y="265" />
+          <mxPoint x="480" y="730" />
+        </Array>
+      </mxGeometry>
+    </mxCell>
+
+  </root>
+</mxGraphModel>
