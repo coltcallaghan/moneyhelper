@@ -414,9 +414,11 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
   } else {
     isaPotPhase = existingIsaPot > 0 ? (existingIsaPot * Math.pow(1 + realReturnRate, years)) : 0;
   }
-  // For the comparison card, show the pot you'd get if you invested the full contribution into an ISA
+  // For the comparison card, show the pot you'd get if you invested into an ISA.
+  // Cap the annual subscription at the statutory £20,000 limit — anything above
+  // would have to go into a GIA, so an "all-in ISA" comparison must not exceed it.
   const existingIsaGrowth = (existingIsaPot > 0 ? existingIsaPot * Math.pow(1 + realReturnRate, years) : 0);
-  const isaPotAllIn = projectPot(contribution, years, realReturnRate) + existingIsaGrowth;
+  const isaPotAllIn = projectPot(Math.min(contribution, isaLimit), years, realReturnRate) + existingIsaGrowth;
   const isaIncome = isaPotAllIn * 0.04;
   const isa = {
     id: 'isa', name: 'Stocks & Shares ISA', icon: '💰', color: '#3b82f6',
@@ -425,6 +427,26 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
     annualIncomeAtRetirement: isaIncome,
     limitExceeded: contribution > isaLimit,
     _phasePot: isaPotPhase,
+  };
+
+  // Compute the phase-based ISA pot for an arbitrary mode's phase allocations.
+  // Mirrors the isaPotPhase computation above so net worth can be made
+  // mode-aware (the Action Plan, timeline and recommendation already react to
+  // the optimisation toggle; net worth previously did not).
+  const isaPhasePotForAllocs = (allocs) => {
+    let pot = parseFloat(existingIsaPot) || 0;
+    if (allocs && allocs.length > 0) {
+      for (const ph of allocs) {
+        const phaseYears = Math.max(0, (ph.endAge || retirementAge) - (ph.startAge || age));
+        if (ph.isa && ph.isa > 0 && phaseYears > 0) {
+          pot = pot * Math.pow(1 + realReturnRate, phaseYears) + projectPot(ph.isa, phaseYears, realReturnRate);
+        } else if (phaseYears > 0) {
+          pot = pot * Math.pow(1 + realReturnRate, phaseYears);
+        }
+      }
+      return pot;
+    }
+    return existingIsaPot > 0 ? (existingIsaPot * Math.pow(1 + realReturnRate, years)) : 0;
   };
 
   // ── SIPP calculation ───────────────────────────────────────────────────
@@ -708,6 +730,21 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
   const liquidWealth  = isaOptPot + sippOptPot;
   const dbOptPot = existingDbPension * 25;
   const totalNetWorth = liquidWealth + apOptPot + propertyEquityAtRetirement + cashAtRetirement;
+
+  // Per-mode net worth: only the ISA pot varies by optimisation mode (its phase
+  // allocation differs); SIPP/AP/property/cash/DB are mode-independent. Attach a
+  // netWorth to each mode so the Net Worth card can follow the toggle instead of
+  // being frozen on maxReturn. maxReturn's values are unchanged from the above.
+  for (const mode of MODES) {
+    const modeIsaOptPot = isaPhasePotForAllocs(modeData[mode].phaseAllocations);
+    const modeLiquid = modeIsaOptPot + sippOptPot;
+    modeData[mode].netWorth = {
+      isaOptPot: modeIsaOptPot,
+      sippOptPot, apOptPot, cashAtRetirement, propertyEquityAtRetirement, dbOptPot,
+      liquidWealth: modeLiquid,
+      totalNetWorth: modeLiquid + apOptPot + propertyEquityAtRetirement + cashAtRetirement,
+    };
+  }
 
   return {
     options, maxEfficiency, fireNumber, years, retirementAge, mixData, existingDbPension, statePensionAge, statePension,
@@ -2360,57 +2397,62 @@ function App() {
             </div>
           )}
 
-          {/* Net Worth Summary */}
-          {(displayResults.netWorth.totalNetWorth > 0) && (
+          {/* Net Worth Summary — follows the optimisation toggle (falls back to
+              the legacy single netWorth for calculations saved before this change) */}
+          {(() => {
+            const nw = displayResults.modes?.[optMode]?.netWorth ?? displayResults.netWorth;
+            if (!nw || !(nw.totalNetWorth > 0)) return null;
+            return (
             <div className="networth-card">
               <p className="form-section-label" style={{ marginBottom: '1rem' }}>💰 Projected Net Worth at Retirement</p>
               <div className="tax-summary-grid">
                 <div className="tax-summary-item">
                   <span className="ts-label">ISA Pot</span>
-                  <span className="ts-value">{fmtGBP(displayResults.netWorth.isaOptPot, 0)}</span>
+                  <span className="ts-value">{fmtGBP(nw.isaOptPot, 0)}</span>
                 </div>
                 <div className="tax-summary-item">
                   <span className="ts-label">SIPP Pot</span>
-                  <span className="ts-value">{fmtGBP(displayResults.netWorth.sippOptPot, 0)}</span>
+                  <span className="ts-value">{fmtGBP(nw.sippOptPot, 0)}</span>
                 </div>
-                {displayResults.netWorth.apOptPot > 0 && (
+                {nw.apOptPot > 0 && (
                   <div className="tax-summary-item">
                     <span className="ts-label">Added Pension (commuted)</span>
-                    <span className="ts-value">{fmtGBP(displayResults.netWorth.apOptPot, 0)}</span>
+                    <span className="ts-value">{fmtGBP(nw.apOptPot, 0)}</span>
                     <span className="ts-sub">DB value — not a pot you can access</span>
                   </div>
                 )}
-                {displayResults.netWorth.dbOptPot > 0 && (
+                {nw.dbOptPot > 0 && (
                   <div className="tax-summary-item">
                     <span className="ts-label">DB Pension (commuted)</span>
-                    <span className="ts-value">{fmtGBP(displayResults.netWorth.dbOptPot, 0)}</span>
+                    <span className="ts-value">{fmtGBP(nw.dbOptPot, 0)}</span>
                     <span className="ts-sub">Estimated capital equivalent (×25)</span>
                   </div>
                 )}
-                {displayResults.netWorth.propertyEquityAtRetirement > 0 && (
+                {nw.propertyEquityAtRetirement > 0 && (
                   <div className="tax-summary-item">
                     <span className="ts-label">Property Equity</span>
-                    <span className="ts-value">{fmtGBP(displayResults.netWorth.propertyEquityAtRetirement, 0)}</span>
+                    <span className="ts-value">{fmtGBP(nw.propertyEquityAtRetirement, 0)}</span>
                   </div>
                 )}
-                {displayResults.netWorth.cashAtRetirement > 0 && (
+                {nw.cashAtRetirement > 0 && (
                   <div className="tax-summary-item">
                     <span className="ts-label">Cash (nominal)</span>
-                    <span className="ts-value">{fmtGBP(displayResults.netWorth.cashAtRetirement, 0)}</span>
+                    <span className="ts-value">{fmtGBP(nw.cashAtRetirement, 0)}</span>
                     <span className="ts-sub">Eroded by inflation if not invested</span>
                   </div>
                 )}
                 <div className="tax-summary-item" style={{ borderTop: '1px solid rgba(255,255,255,0.15)', paddingTop: '0.75rem' }}>
                   <span className="ts-label" style={{ fontWeight: 700 }}>Liquid Wealth (ISA + SIPP)</span>
-                  <span className="ts-value positive" style={{ fontSize: '1.15rem' }}>{fmtGBP(displayResults.netWorth.liquidWealth, 0)}</span>
+                  <span className="ts-value positive" style={{ fontSize: '1.15rem' }}>{fmtGBP(nw.liquidWealth, 0)}</span>
                 </div>
                 <div className="tax-summary-item" style={{ borderTop: '1px solid rgba(255,255,255,0.15)', paddingTop: '0.75rem' }}>
                   <span className="ts-label" style={{ fontWeight: 700 }}>Total Net Worth</span>
-                  <span className="ts-value positive" style={{ fontSize: '1.25rem' }}>{fmtGBP(displayResults.netWorth.totalNetWorth, 0)}</span>
+                  <span className="ts-value positive" style={{ fontSize: '1.25rem' }}>{fmtGBP(nw.totalNetWorth, 0)}</span>
                 </div>
               </div>
             </div>
-          )}
+            );
+          })()}
 
           {/* Recommendation */}
           {(() => {
