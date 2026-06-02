@@ -11,6 +11,45 @@ three legacy Node scripts still run.
 
 ---
 
+## Tax bands used (authoritative source)
+
+Verified against **https://www.gov.uk/income-tax-rates** (England, Wales &
+Northern Ireland — Scotland excluded, consistent with the project's documented
+limitation). These are the 2025/26 values, frozen and unchanged for 2026/27.
+
+| Band | Rate | Applies to (gross income) |
+|---|---|---|
+| Personal Allowance | 0% | First £12,570 (standard code `1257L`) |
+| Basic rate | 20% | £12,571 → £50,270 |
+| Higher rate | 40% | £50,271 → £125,140 |
+| Additional rate | 45% | Over £125,140 |
+| PA taper | — | PA reduced £1 per £2 of income over £100,000; £0 at £125,140 |
+
+National Insurance (employee, simplified): 8% on £12,570→£50,270, 2% above
+£50,270.
+
+### Why the code uses a fixed `basicBand = 37700`
+
+The 20% band is a **fixed £37,700 width of _taxable_ income** (income after the
+personal allowance), not a function of the allowance:
+
+```
+£50,270 (higher-rate threshold) − £12,570 (personal allowance) = £37,700
+```
+
+It does **not** shrink when the personal allowance is tapered. Example at
+£110,000 (PA tapered to £7,570): taxable income £102,430, of which the first
+£37,700 is taxed at 20% and the remainder at 40% up to the £125,140 gross
+threshold.
+
+The **old** code computed `basic = 50270 − pa`, which wrongly *widened* the 20%
+band as the allowance fell — the root of the non-standard-PA under-taxing bug
+(Finding 2). Pinning the band to the constant `37700` makes it correct for any
+allowance. (A future refactor — Task 3 — should name this `BASIC_RATE_LIMIT` in
+`taxCalculations.js` alongside the other thresholds.)
+
+---
+
 ## Change 1 — Income tax taper, unified to the correct HMRC model (Findings 1+2)
 
 **File:** `src/App.js` — `calcIncomeTax` (and comment in `getMarginalTaxRate`).
