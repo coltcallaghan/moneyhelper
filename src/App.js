@@ -2569,6 +2569,9 @@ function App() {
                     <span className="rec-stat-value">{fmtGBP(activeRec.best.annualIncomeAtRetirement, 0)}/yr</span>
                   </div>
                 </div>
+                <p className="rec-note" style={{ marginTop: '0.75rem', fontSize: '0.8rem', color: '#94a3b8' }}>
+                  Figures above assume your whole {fmtGBP(displayResults.contribution)}/yr goes into this vehicle. For the recommended split across vehicles, follow the <strong>Action Plan</strong> above.
+                </p>
               </div>
             );
           })()}
@@ -2583,6 +2586,9 @@ function App() {
 
           {/* Full comparison */}
           <p className="results-heading">Full Comparison ({displayResults.years} years — all values in today's money at {fmtPct(displayResults.realReturnRate, 1)}/yr real growth)</p>
+          <p className="results-subheading" style={{ marginTop: '-0.5rem', marginBottom: '1rem', fontSize: '0.85rem', color: '#94a3b8' }}>
+            Each card below shows what would happen if you put your <strong>entire</strong> {fmtGBP(displayResults.contribution)}/yr into that <strong>one</strong> vehicle — a like-for-like comparison. Your actual recommended split across vehicles is in the <strong>Action Plan</strong> above.
+          </p>
           <div className="results-grid">
             {displayResults.options.map(o => (
               <ResultCard key={o.id} option={o} maxEfficiency={displayResults.maxEfficiency} years={displayResults.years} />
