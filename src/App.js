@@ -449,6 +449,26 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
     return existingIsaPot > 0 ? (existingIsaPot * Math.pow(1 + realReturnRate, years)) : 0;
   };
 
+  // Phase-based SIPP pot for a mode's phase allocations — uses the GROSS SIPP
+  // contribution per phase (net × 1.25 govt top-up) so the Retirement Picture
+  // and Net Worth derive SIPP from the SAME allocation the Action Plan shows,
+  // rather than assuming the whole contribution goes into a SIPP.
+  const sippPhasePotForAllocs = (allocs) => {
+    let pot = parseFloat(existingSippPot) || 0;
+    if (allocs && allocs.length > 0) {
+      for (const ph of allocs) {
+        const phaseYears = Math.max(0, (ph.endAge || retirementAge) - (ph.startAge || age));
+        if (ph.sippGross && ph.sippGross > 0 && phaseYears > 0) {
+          pot = pot * Math.pow(1 + realReturnRate, phaseYears) + projectPot(ph.sippGross, phaseYears, realReturnRate);
+        } else if (phaseYears > 0) {
+          pot = pot * Math.pow(1 + realReturnRate, phaseYears);
+        }
+      }
+      return pot;
+    }
+    return existingSippPot > 0 ? (existingSippPot * Math.pow(1 + realReturnRate, years)) : 0;
+  };
+
   // ── SIPP calculation ───────────────────────────────────────────────────
   const sippGovTopUp = contribution * (20 / 80);
   const sippGross = contribution + sippGovTopUp;
@@ -731,16 +751,24 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
   const dbOptPot = existingDbPension * 25;
   const totalNetWorth = liquidWealth + apOptPot + propertyEquityAtRetirement + cashAtRetirement;
 
-  // Per-mode net worth: only the ISA pot varies by optimisation mode (its phase
-  // allocation differs); SIPP/AP/property/cash/DB are mode-independent. Attach a
-  // netWorth to each mode so the Net Worth card can follow the toggle instead of
-  // being frozen on maxReturn. maxReturn's values are unchanged from the above.
+  // Per-mode net worth and phase pots. Both ISA and SIPP vary by optimisation
+  // mode (their phase allocations differ); AP/property/cash/DB are
+  // mode-independent. Deriving SIPP from the phase allocation makes the Net
+  // Worth card AND the Retirement Picture card use the SAME split the Action
+  // Plan shows, instead of assuming the whole contribution goes into a SIPP.
+  // For maxReturn the phase-based SIPP equals the full-contribution sippOptPot
+  // (verified), so maxReturn output is unchanged.
   for (const mode of MODES) {
-    const modeIsaOptPot = isaPhasePotForAllocs(modeData[mode].phaseAllocations);
-    const modeLiquid = modeIsaOptPot + sippOptPot;
+    const modeIsaOptPot  = isaPhasePotForAllocs(modeData[mode].phaseAllocations);
+    const modeSippOptPot = sippPhasePotForAllocs(modeData[mode].phaseAllocations);
+    const modeLiquid = modeIsaOptPot + modeSippOptPot;
+    // Phase pots the Retirement Picture card consumes for income (4% SWR etc.)
+    modeData[mode].isaPhasePot  = modeIsaOptPot;
+    modeData[mode].sippPhasePot = modeSippOptPot;
     modeData[mode].netWorth = {
       isaOptPot: modeIsaOptPot,
-      sippOptPot, apOptPot, cashAtRetirement, propertyEquityAtRetirement, dbOptPot,
+      sippOptPot: modeSippOptPot,
+      apOptPot, cashAtRetirement, propertyEquityAtRetirement, dbOptPot,
       liquidWealth: modeLiquid,
       totalNetWorth: modeLiquid + apOptPot + propertyEquityAtRetirement + cashAtRetirement,
     };
@@ -1473,17 +1501,23 @@ function RetirementPictureCard({ results, isServing }) {
   const apAnnualFull = (isServing && apOpt) ? apOpt.totalPensionAcquired || 0 : 0;
   const edpLump    = (isServing && apOpt) ? apOpt.edpLumpSum || 0 : 0;
   const edpAnnual  = (isServing && apOpt) ? apOpt.edpIncome || 0 : 0;
-  // Prefer the phase-based ISA pot (matches the Action Plan). If phase data
-  // exists (even if zero), use it; otherwise fall back to the all-in ISA pot.
-  let isaPhasePot;
-  if (isaOpt && Object.prototype.hasOwnProperty.call(isaOpt, '_phasePot')) {
-    isaPhasePot = isaOpt._phasePot;
-  } else {
-    isaPhasePot = isaOpt?.potAtRetirement ?? 0;
-  }
+  // Derive BOTH ISA and SIPP from the active mode's phase allocations so this
+  // card matches the Action Plan and Net Worth card. Previously ISA used the
+  // (maxReturn-default) _phasePot while SIPP used sippOpt.annualIncomeAtRetirement
+  // — which assumes the WHOLE contribution goes into a SIPP — so the card could
+  // show an ISA-light / SIPP-heavy picture that contradicted an ISA-first plan.
+  // Fall back to the legacy option figures for calculations saved before this change.
+  const isaPhasePot = (typeof results.activeIsaPhasePot === 'number')
+    ? results.activeIsaPhasePot
+    : (isaOpt && Object.prototype.hasOwnProperty.call(isaOpt, '_phasePot') ? isaOpt._phasePot : (isaOpt?.potAtRetirement ?? 0));
+  const sippPhasePot = (typeof results.activeSippPhasePot === 'number')
+    ? results.activeSippPhasePot
+    : (sippOpt?.potAtRetirement ?? 0);
+
   const isaAnnual = isaPhasePot > 0 ? Math.round(isaPhasePot * 0.04) : 0;
-  const sippAnnual = sippOpt?.annualIncomeAtRetirement || 0;
-  const sippLump   = sippOpt?.taxFreeLump || 0;
+  // SIPP drawdown: 4% of the 75% that stays invested after the 25% tax-free lump.
+  const sippAnnual = sippPhasePot > 0 ? Math.round(sippPhasePot * 0.75 * 0.04) : 0;
+  const sippLump   = sippPhasePot > 0 ? Math.round(sippPhasePot * 0.25) : 0;
 
   const sippAvailableAge = Math.max(57, retirementAge);
   const sippAvailableNow = retirementAge >= 57;
@@ -2199,6 +2233,8 @@ function App() {
           ...displayResults,
           actionPlan: displayResults.modes?.[optMode]?.actionPlan ?? displayResults.actionPlan,
           phaseAllocations: displayResults.modes?.[optMode]?.phaseAllocations ?? displayResults.phaseAllocations,
+          activeIsaPhasePot: displayResults.modes?.[optMode]?.isaPhasePot,
+          activeSippPhasePot: displayResults.modes?.[optMode]?.sippPhasePot,
         } : null;
         return (
         <div className="results-section">
