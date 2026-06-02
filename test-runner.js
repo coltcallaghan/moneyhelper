@@ -17,12 +17,15 @@ const fmtGBP = (n, dp = 2) => {
   return '£' + n.toLocaleString('en-GB', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 };
 
+// Annuity-DUE future value, matching App.js projectPot:
+// FV = C × ((1+r)^n − 1) / r × (1+r)   (contributions at the start of each year)
 const projectPot = (annualContribution, years, realReturnRate) => {
+  if (years <= 0) return annualContribution;
   if (realReturnRate === 0) {
     return annualContribution * years;
   }
-  const fvFactor = (Math.pow(1 + realReturnRate, years) - 1) / realReturnRate;
-  return Math.round(annualContribution * fvFactor);
+  const fvFactor = ((Math.pow(1 + realReturnRate, years) - 1) / realReturnRate) * (1 + realReturnRate);
+  return annualContribution * fvFactor;
 };
 
 // Test cases

@@ -118,20 +118,23 @@ function getEffectivePA(gross, basePa) {
 function calcIncomeTax(gross, taxInfo) {
   if (taxInfo.mode === 'nt')   return 0;
   if (taxInfo.mode === 'flat') return Math.max(0, gross * taxInfo.flatRate);
-  const pa       = getEffectivePA(gross, taxInfo.pa);
-  const taxable  = Math.max(0, gross - pa);
-  const basic    = Math.max(0, 50270  - Math.max(0, pa));
-  const higher   = Math.max(0, 125140 - Math.max(0, pa));
+  // HMRC method: tax bands apply to TAXABLE income (gross − personal allowance).
+  // The basic-rate band is a FIXED £37,700 of taxable income (20%). The higher
+  // rate (40%) then applies up to the £125,140 GROSS additional-rate threshold,
+  // i.e. (£125,140 − PA) of taxable income. The additional rate (45%) applies
+  // above that. The 60% effective marginal rate in the £100k–£125,140 taper band
+  // emerges naturally: each £1 of allowance lost (£1 per £2 of income over £100k)
+  // pushes £1 more into the 40% band on top of the 40% on the income itself —
+  // no separate "lost PA charge" is needed (that double-counted for non-standard
+  // tax codes and only happened to cancel out for the standard £12,570 allowance).
+  const pa          = getEffectivePA(gross, taxInfo.pa);
+  const taxable     = Math.max(0, gross - pa);
+  const basicBand   = 37700;                            // 20% band width (fixed)
+  const higherTop   = Math.max(0, 125140 - Math.max(0, pa)); // 40% up to here (taxable)
   let tax = 0;
-  if (taxable > 0)       tax += Math.min(taxable, basic) * 0.20;
-  if (taxable > basic)   tax += (Math.min(taxable, higher) - basic) * 0.40;
-  if (taxable > higher)  tax += (taxable - higher) * 0.45;
-  // Apply an explicit taper "charge" for any personal allowance lost due to the
-  // £100k taper rule. Some historical calculations treat the lost allowance as
-  // an additional 20% charge on the amount of allowance removed — include the
-  // same here to preserve the legacy output where expected.
-  const lostPA = Math.max(0, (taxInfo.pa || 0) - pa);
-  if (lostPA > 0) tax += lostPA * 0.20;
+  if (taxable > 0)         tax += Math.min(taxable, basicBand) * 0.20;
+  if (taxable > basicBand) tax += (Math.min(taxable, higherTop) - basicBand) * 0.40;
+  if (taxable > higherTop) tax += (taxable - higherTop) * 0.45;
   return Math.max(0, tax);
 }
 
@@ -143,7 +146,7 @@ function getMarginalTaxRate(gross, taxInfo) {
   if (gross <= pa)       return 0;
   if (gross <= 50270)    return 0.20;
   if (gross <= 100000)   return 0.40;
-  if (gross <= 125140)   return 0.60; // 40% + 20% on lost PA = effective 60%
+  if (gross <= 125140)   return 0.60; // 40% on income + 40% on the £0.50 of PA lost per £1 = effective 60%
   return 0.45;
 }
 
@@ -186,7 +189,8 @@ function calcMixScenarios(contribution, years, returnRate, taxRate) {
 
   const scenarios = splits.map(({ isa, label }) => {
     const sippNet      = contribution * (1 - isa);
-    const isaContrib   = contribution * isa;
+    // Cap ISA at the statutory £20,000 annual subscription limit.
+    const isaContrib   = Math.min(contribution * isa, 20000);
     const sippGovTopUp = sippNet * (20 / 80);
     const sippGross    = sippNet + sippGovTopUp;
     const sippExtra    = taxRate > 0.20 ? sippGross * (taxRate - 0.20) : 0;
