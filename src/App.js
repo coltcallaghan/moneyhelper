@@ -769,7 +769,10 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
   const propertyEquityAtRetirement = mortgageAnalysis ? mortgageAnalysis.equityRetirement : propertyValueAtRetire;
   const liquidWealth  = isaOptPot + sippOptPot;
   const dbOptPot = existingDbPension * 25;
-  const totalNetWorth = liquidWealth + apOptPot + propertyEquityAtRetirement + cashAtRetirement;
+  // Include the commuted DB pension in net worth — it is a capital-equivalent
+  // asset shown as its own row, and the AP commuted value is already counted, so
+  // omitting DB made the displayed rows not sum to the total.
+  const totalNetWorth = liquidWealth + apOptPot + dbOptPot + propertyEquityAtRetirement + cashAtRetirement;
 
   // Per-mode net worth and phase pots. Both ISA and SIPP vary by optimisation
   // mode (their phase allocations differ); AP/property/cash/DB are
@@ -800,7 +803,7 @@ function buildResults({ salary, taxCode, age, yearsService, leaveAge, apCostPer1
       sippOptPot: modeSippOptPot,
       apOptPot: modeApOptPot, cashAtRetirement, propertyEquityAtRetirement, dbOptPot,
       liquidWealth: modeLiquid,
-      totalNetWorth: modeLiquid + modeApOptPot + propertyEquityAtRetirement + cashAtRetirement,
+      totalNetWorth: modeLiquid + modeApOptPot + dbOptPot + propertyEquityAtRetirement + cashAtRetirement,
     };
   }
 
