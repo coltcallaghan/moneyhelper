@@ -4,6 +4,8 @@ import './App.css';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts';
 import { inferStatePensionAge, calcIncomeTax } from './utils/taxCalculations';
 import { buildResults } from './utils/buildResults';
+import { fmtGBP, fmtPct } from './utils/formatters';
+import { computeLabelPositions } from './utils/chartHelpers';
 import DisclaimerBanner from './DisclaimerBanner';
 import IntroStep from './steps/IntroStep';
 import ServiceStatus from './steps/ServiceStatus';
@@ -43,44 +45,8 @@ function getCalcSummary(form, results) {
   return `${form.age || '?'}y, £${form.salary || '?'} salary, £${form.contribution || '?'} invest, retire @${form.retirementAge || '?'} — Net Worth: ${results.netWorth ? fmtGBP(results.netWorth.totalNetWorth, 0) : '?'}`;
 }
 
-const fmtGBP = (n, dec = 0) =>
-  new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: dec }).format(n);
-const fmtPct = (n, dec = 0) => `${(n * 100).toFixed(dec)}%`;
-
-// Tax code parsing, income tax, NI, PA taper and marginal-rate helpers now live
-// in ./utils/taxCalculations.js (imported above) — all pure, unit-testable.
-
-// Compound-growth (projectPot) and ISA/SIPP mix analysis (calcMixScenarios) now
-// live in ./utils/pensionModelling.js (imported above) — pure and unit-testable.
-
-// Utility: compute label positions for vertical chart markers to avoid overlapping
-function computeLabelPositions(markers, threshold = 2) {
-  const nums = Array.from(new Set((markers || []).filter(Boolean).map(Number))).sort((a, b) => a - b);
-  const groups = [];
-  let cur = [];
-  for (const m of nums) {
-    if (cur.length === 0) { cur.push(m); continue; }
-    const last = cur[cur.length - 1];
-    if (m - last <= threshold) cur.push(m);
-    else { groups.push(cur); cur = [m]; }
-  }
-  if (cur.length) groups.push(cur);
-  const map = {};
-  for (const g of groups) {
-    if (g.length === 1) { map[g[0]] = 'insideTop'; continue; }
-    if (g.length === 2) {
-      map[g[0]] = 'insideTop';
-      map[g[1]] = 'insideBottom';
-      continue;
-    }
-    // For groups of 3 or more, place the middle marker at the bottom and others at top
-    const mid = Math.floor(g.length / 2);
-    for (let i = 0; i < g.length; i++) {
-      map[g[i]] = (i === mid) ? 'insideBottom' : 'insideTop';
-    }
-  }
-  return map;
-}
+// Formatters (fmtGBP, fmtPct) and chart-label positioning (computeLabelPositions)
+// now live in ./utils/formatters.js and ./utils/chartHelpers.js (imported above).
 
 // The core calculation engine (buildResults) now lives in
 // ./utils/buildResults.js — it composes the pure calc modules and the
