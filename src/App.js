@@ -4,6 +4,10 @@ import './App.css';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts';
 import { buildMODActionPlan } from './actionPlanMOD';
 import { buildCivilianActionPlan } from './actionPlanCivilian';
+import {
+  parseTaxCode, inferStatePensionAge, getEffectivePA,
+  calcIncomeTax, getMarginalTaxRate, calcNI, getMarginalNI,
+} from './utils/taxCalculations';
 import DisclaimerBanner from './DisclaimerBanner';
 import IntroStep from './steps/IntroStep';
 import ServiceStatus from './steps/ServiceStatus';
@@ -47,119 +51,8 @@ const fmtGBP = (n, dec = 0) =>
   new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: dec }).format(n);
 const fmtPct = (n, dec = 0) => `${(n * 100).toFixed(dec)}%`;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// TAX CODE PARSING
-// Determines your personal allowance from HMRC tax code.
-// Common codes: 1257L (standard), BR (flat 20%), D0 (40%), D1 (45%),
-//               NT (no tax), 0T (no PA), K[n] (negative PA),
-//               S prefix (Scottish), C prefix (Welsh)
-// ─────────────────────────────────────────────────────────────────────────────
-function parseTaxCode(code) {
-  if (!code || !code.trim()) {
-    return { pa: 12570, mode: 'normal', note: 'Standard 1257L — personal allowance £12,570' };
-  }
-  const upper = code.toUpperCase().trim().replace(/\s/g, '');
-  const cleaned = upper.replace(/(W1|M1|X)$/, ''); // strip emergency suffixes
-
-  if (cleaned === 'BR') return { pa: 0,     mode: 'flat', flatRate: 0.20, note: 'All income taxed at 20% — no personal allowance' };
-  if (cleaned === 'D0') return { pa: 0,     mode: 'flat', flatRate: 0.40, note: 'All income taxed at higher rate (40%)' };
-  if (cleaned === 'D1') return { pa: 0,     mode: 'flat', flatRate: 0.45, note: 'All income taxed at additional rate (45%)' };
-  if (cleaned === 'NT') return { pa: 99999, mode: 'nt',   note: 'NT — no tax deducted' };
-  if (cleaned === '0T') return { pa: 0,     mode: 'normal', note: '0T — no personal allowance this year' };
-
-  // K codes: negative allowance (e.g. company benefits, underpaid tax)
-  const kMatch = cleaned.match(/^[SC]?K(\d+)$/);
-  if (kMatch) {
-    const extra = parseInt(kMatch[1]) * 10;
-    return { pa: -extra, mode: 'k', note: `K code — adds £${extra.toLocaleString()} of extra taxable income (reduces your allowance)` };
-  }
-
-  let working = cleaned;
-  let scottish = false;
-  if (working.startsWith('S')) { scottish = true; working = working.slice(1); }
-  else if (working.startsWith('C')) { working = working.slice(1); }
-
-  // Standard: e.g. 1257L, 1100M, 810T
-  const stdMatch = working.match(/^(\d+)[A-Z]?$/);
-  if (stdMatch) {
-    const pa = parseInt(stdMatch[1]) * 10;
-    return {
-      pa, mode: 'normal', scottish,
-      note: `Personal allowance: £${pa.toLocaleString()}${scottish ? ' (Scottish taxpayer — income tax bands differ slightly)' : ''}`
-    };
-  }
-  return { pa: 12570, mode: 'normal', note: 'Unrecognised code — using standard £12,570 allowance' };
-}
-
-// Infer State Pension Age from current age (approximate mapping by birth year)
-function inferStatePensionAge(age) {
-  const currentYear = new Date().getFullYear();
-  const birthYear = currentYear - (age || 0);
-  // Approximate mapping:
-  // Born <= 1953  => SPA 65
-  // Born 1954-1959 => SPA 66
-  // Born >= 1960  => SPA 67
-  if (birthYear <= 1953) return 65;
-  if (birthYear <= 1959) return 66;
-  return 67;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// INCOME TAX  (England/Wales 2025/26)
-// Key: The personal allowance TAPERS between £100k–£125,140, creating a
-// hidden 60% effective marginal rate in that band.
-// ─────────────────────────────────────────────────────────────────────────────
-function getEffectivePA(gross, basePa) {
-  if (gross <= 100000 || basePa <= 0) return basePa;
-  const reduction = Math.min(basePa, Math.floor((gross - 100000) / 2));
-  return Math.max(0, basePa - reduction);
-}
-
-function calcIncomeTax(gross, taxInfo) {
-  if (taxInfo.mode === 'nt')   return 0;
-  if (taxInfo.mode === 'flat') return Math.max(0, gross * taxInfo.flatRate);
-  // HMRC method: tax bands apply to TAXABLE income (gross − personal allowance).
-  // The basic-rate band is a FIXED £37,700 of taxable income (20%). The higher
-  // rate (40%) then applies up to the £125,140 GROSS additional-rate threshold,
-  // i.e. (£125,140 − PA) of taxable income. The additional rate (45%) applies
-  // above that. The 60% effective marginal rate in the £100k–£125,140 taper band
-  // emerges naturally: each £1 of allowance lost (£1 per £2 of income over £100k)
-  // pushes £1 more into the 40% band on top of the 40% on the income itself —
-  // no separate "lost PA charge" is needed (that double-counted for non-standard
-  // tax codes and only happened to cancel out for the standard £12,570 allowance).
-  const pa          = getEffectivePA(gross, taxInfo.pa);
-  const taxable     = Math.max(0, gross - pa);
-  const basicBand   = 37700;                            // 20% band width (fixed)
-  const higherTop   = Math.max(0, 125140 - Math.max(0, pa)); // 40% up to here (taxable)
-  let tax = 0;
-  if (taxable > 0)         tax += Math.min(taxable, basicBand) * 0.20;
-  if (taxable > basicBand) tax += (Math.min(taxable, higherTop) - basicBand) * 0.40;
-  if (taxable > higherTop) tax += (taxable - higherTop) * 0.45;
-  return Math.max(0, tax);
-}
-
-// Marginal rate — includes the 60% taper trap at £100k–£125,140
-function getMarginalTaxRate(gross, taxInfo) {
-  if (!taxInfo || taxInfo.mode === 'nt')   return 0;
-  if (taxInfo.mode === 'flat') return taxInfo.flatRate;
-  const pa = getEffectivePA(gross, taxInfo.pa);
-  if (gross <= pa)       return 0;
-  if (gross <= 50270)    return 0.20;
-  if (gross <= 100000)   return 0.40;
-  if (gross <= 125140)   return 0.60; // 40% on income + 40% on the £0.50 of PA lost per £1 = effective 60%
-  return 0.45;
-}
-
-function calcNI(salary) {
-  if (salary <= 12570) return 0;
-  return Math.min(salary - 12570, 50270 - 12570) * 0.08 + Math.max(0, salary - 50270) * 0.02;
-}
-
-function getMarginalNI(salary) {
-  if (salary <= 12570) return 0;
-  if (salary <= 50270) return 0.08;
-  return 0.02;
-}
+// Tax code parsing, income tax, NI, PA taper and marginal-rate helpers now live
+// in ./utils/taxCalculations.js (imported above) — all pure, unit-testable.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // COMPOUND GROWTH  (inspired by FIRE repo)
