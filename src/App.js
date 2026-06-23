@@ -8,6 +8,7 @@ import {
   parseTaxCode, inferStatePensionAge, getEffectivePA,
   calcIncomeTax, getMarginalTaxRate, calcNI, getMarginalNI,
 } from './utils/taxCalculations';
+import { projectPot, calcMixScenarios } from './utils/pensionModelling';
 import DisclaimerBanner from './DisclaimerBanner';
 import IntroStep from './steps/IntroStep';
 import ServiceStatus from './steps/ServiceStatus';
@@ -54,74 +55,8 @@ const fmtPct = (n, dec = 0) => `${(n * 100).toFixed(dec)}%`;
 // Tax code parsing, income tax, NI, PA taper and marginal-rate helpers now live
 // in ./utils/taxCalculations.js (imported above) — all pure, unit-testable.
 
-// ─────────────────────────────────────────────────────────────────────────────
-// COMPOUND GROWTH  (inspired by FIRE repo)
-// FV of annual contributions: C × [(1+r)^n − 1] / r × (1+r)
-// ─────────────────────────────────────────────────────────────────────────────
-function projectPot(annualContrib, years, r) {
-  if (years <= 0) return annualContrib;
-  if (r === 0)    return annualContrib * years;
-  return annualContrib * ((Math.pow(1 + r, years) - 1) / r) * (1 + r);
-}
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ISA / SIPP MIX ANALYSIS
-// Tries 5 splits and finds the optimal blend for net income at retirement.
-// Key insight: SIPP income in retirement is taxable (above PA); ISA is tax-free.
-// ─────────────────────────────────────────────────────────────────────────────
-function calcMixScenarios(contribution, years, returnRate, taxRate) {
-  const retirementPA = { pa: 12570, mode: 'normal' };
-  const splits = [
-    { isa: 1.00, label: '100% ISA' },
-    { isa: 0.75, label: '75% ISA · 25% SIPP' },
-    { isa: 0.50, label: '50% ISA · 50% SIPP' },
-    { isa: 0.25, label: '25% ISA · 75% SIPP' },
-    { isa: 0.00, label: '100% SIPP' },
-  ];
-
-  const scenarios = splits.map(({ isa, label }) => {
-    const sippNet      = contribution * (1 - isa);
-    // Cap ISA at the statutory £20,000 annual subscription limit.
-    const isaContrib   = Math.min(contribution * isa, 20000);
-    const sippGovTopUp = sippNet * (20 / 80);
-    const sippGross    = sippNet + sippGovTopUp;
-    const sippExtra    = taxRate > 0.20 ? sippGross * (taxRate - 0.20) : 0;
-    const netCost      = isaContrib + sippNet - sippExtra;
-
-    const isaPot    = projectPot(isaContrib, years, returnRate);
-    const sippPot   = projectPot(sippGross, years, returnRate);
-    const totalPot  = isaPot + sippPot;
-
-    const isaIncome     = isaPot * 0.04;
-    const sippLump      = sippPot * 0.25;
-    const sippDrawdown  = sippPot * 0.75 * 0.04;
-    const sippTax       = calcIncomeTax(sippDrawdown, retirementPA);
-    const sippNetIncome = sippDrawdown - sippTax;
-    const totalNetIncome = isaIncome + sippNetIncome;
-    const incomePerPound = netCost > 0 ? totalNetIncome / netCost : 0;
-
-    return {
-      label, isa, netCost, isaPot, sippPot, totalPot,
-      sippLump, isaIncome, sippNetIncome, sippDrawdown, sippTax,
-      totalNetIncome, incomePerPound
-    };
-  });
-
-  const bestIdx = scenarios.reduce(
-    (b, s, i) => s.incomePerPound > scenarios[b].incomePerPound ? i : b, 0
-  );
-
-  // "Sweet spot": max SIPP where retirement drawdown stays within personal allowance (no tax)
-  // sippPot * 0.75 * 0.04 = 12570 → sippPot = 419,000
-  const paFilledPot  = 12570 / (0.75 * 0.04);
-  const fvFactor = (years > 0 && returnRate !== 0)
-    ? ((Math.pow(1 + returnRate, years) - 1) / returnRate) * (1 + returnRate)
-    : years;
-  const sippMaxForPA = Math.min((paFilledPot / fvFactor) / 1.25, contribution); // net equiv
-
-  return { scenarios, bestIdx, sippMaxForPA };
-}
+// Compound-growth (projectPot) and ISA/SIPP mix analysis (calcMixScenarios) now
+// live in ./utils/pensionModelling.js (imported above) — pure and unit-testable.
 
 // Utility: compute label positions for vertical chart markers to avoid overlapping
 function computeLabelPositions(markers, threshold = 2) {
