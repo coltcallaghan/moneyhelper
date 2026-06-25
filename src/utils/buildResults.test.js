@@ -46,6 +46,25 @@ describe('buildResults — end-to-end (£160k serving, retire 55, Target Age)', 
   });
 });
 
+describe('buildResults — SIPP relief is capped at 100% of earnings', () => {
+  // A £16,000 earner contributing £27,500/yr (from savings) would, under the old
+  // model, be credited relief on the full £34,375 gross — more than they earn.
+  // The relief-eligible gross is now capped at earnings, so the SIPP option's net
+  // cost cannot be reduced by more relief than the salary supports.
+  const r = buildResults({
+    ...base, salary: 16000, isServing: false, yearsService: 0, leaveAge: 65,
+    existingDbPension: 0, existingIsaPot: 0, existingSippPot: 0,
+    statePensionAge: 67, statePension: 11502,
+    contribution: 27500, retirementAge: 65,
+  });
+  it('does not over-credit relief beyond earnings', () => {
+    const sipp = r.options.find(o => o.id === 'sipp');
+    // At 20% marginal there is no higher-rate extra relief anyway, so net cost
+    // equals the contribution — never less.
+    expect(sipp.costToYou).toBeGreaterThanOrEqual(27500 - 1);
+  });
+});
+
 describe('buildResults — AFPS-15 Added Pension efficiency gate', () => {
   // The MOD allocation engine only buys Added Pension when its capital-equivalent
   // efficiency clears the gate (>= 90% of the equivalent SIPP, tightened to 100%

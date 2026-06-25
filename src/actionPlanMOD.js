@@ -3,7 +3,7 @@ import { buildSIPPStep, buildISAStep, buildGIAStep, allocateSippIsaInOrder } fro
 // Action Plan logic for MOD (serving) users
 export function buildMODActionPlan({
   contribution, years, realReturnRate, taxRate, niRate, age, leaveAge, retirementAge,
-  apPaymentType, apCostPer100, sippNetLimit, fmtGBP, fmtPct, projectPot,
+  apPaymentType, apCostPer100, sippNetLimit, salary, fmtGBP, fmtPct, projectPot,
   addedPension, apMaxContrib, costPer100actual, AP_LIFETIME_MAX, alreadyLeft, yearsService, optMode = 'maxReturn'
 }) {
   // Local helpers and variables (mirror previous in-file logic)
@@ -70,7 +70,7 @@ export function buildMODActionPlan({
     }
 
     // SIPP/ISA (in mode order) and GIA overflow via the shared allocation engine.
-    const makeSipp = (maxBudget) => buildSIPPStep({ maxBudget, phaseYears, realReturnRate, taxRate, sippNetLimit, projectPot, fmtGBP, fmtPct });
+    const makeSipp = (maxBudget) => buildSIPPStep({ maxBudget, phaseYears, realReturnRate, taxRate, sippNetLimit, salary, projectPot, fmtGBP, fmtPct });
     const makeIsa  = (maxBudget) => buildISAStep({ maxBudget, phaseYears, realReturnRate, projectPot, fmtGBP });
 
     remaining = allocateSippIsaInOrder({ steps, remaining, optMode, makeSipp, makeIsa });

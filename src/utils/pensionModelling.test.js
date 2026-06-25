@@ -1,4 +1,40 @@
-import { projectPot, calcMixScenarios } from './pensionModelling';
+import { projectPot, calcMixScenarios, sippHigherRateRelief, reliefEligibleGross } from './pensionModelling';
+
+describe('sippHigherRateRelief — band-aware higher-rate relief', () => {
+  it('is zero at or below the basic rate', () => {
+    expect(sippHigherRateRelief(10000, 0.20, 40000)).toBe(0);
+    expect(sippHigherRateRelief(10000, 0, 40000)).toBe(0);
+  });
+  it('legacy (no salary) credits relief on the whole gross', () => {
+    expect(sippHigherRateRelief(10000, 0.40)).toBeCloseTo(2000, 6); // 20% of 10,000
+  });
+  it('is identical to legacy when the whole gross sits in the higher band', () => {
+    // £160k salary: higher-band income £109,730 dwarfs any plausible gross.
+    expect(sippHigherRateRelief(34375, 0.45, 160000)).toBeCloseTo(sippHigherRateRelief(34375, 0.45), 6);
+  });
+  it('only credits relief on the portion of gross in the higher band (straddle)', () => {
+    // salary £55,000 → only £4,730 is in the 40% band; relief = 20% × 4,730.
+    expect(sippHigherRateRelief(12500, 0.40, 55000)).toBeCloseTo(946, 0);
+  });
+  it('credits no extra relief when salary is entirely basic-rate', () => {
+    expect(sippHigherRateRelief(5000, 0.40, 45000)).toBe(0); // nothing above £50,270
+  });
+});
+
+describe('reliefEligibleGross — 100%-of-earnings cap (HMRC)', () => {
+  it('returns the gross uncapped when no salary is given (legacy)', () => {
+    expect(reliefEligibleGross(34375)).toBe(34375);
+  });
+  it('caps relief-eligible gross at earnings when the contribution exceeds them', () => {
+    expect(reliefEligibleGross(34375, 5000)).toBe(5000);
+  });
+  it('does not cap when the gross is within earnings', () => {
+    expect(reliefEligibleGross(9375, 160000)).toBe(9375);
+  });
+  it('honours the £3,600 minimum-relievable floor for low earners', () => {
+    expect(reliefEligibleGross(5000, 2000)).toBe(3600);
+  });
+});
 
 describe('projectPot — annuity-due future value', () => {
   it('uses the algebraic limit C × n when r = 0 (no divide-by-zero)', () => {

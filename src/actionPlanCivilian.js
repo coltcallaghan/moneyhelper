@@ -3,14 +3,14 @@ import { buildSIPPStep, buildISAStep, buildGIAStep, allocateSippIsaInOrder } fro
 // Action Plan logic for civilian / non-MOD users
 export function buildCivilianActionPlan({
   contribution, years, realReturnRate, taxRate, niRate, age, retirementAge,
-  sippNetLimit, fmtGBP, fmtPct, projectPot, alreadyLeft, optMode = 'maxReturn'
+  sippNetLimit, salary, fmtGBP, fmtPct, projectPot, alreadyLeft, optMode = 'maxReturn'
 }) {
   // Civilian plan never offers AFPS Added Pension — allocate based on optimization mode
   // maxReturn: SIPP -> ISA -> GIA (prioritizes tax efficiency)
   // targetRetirement: ISA -> SIPP -> GIA (prioritizes accessible income at retirement age)
   function buildPhaseSteps(budget, phaseYears) {
     const steps = [];
-    const makeSipp = (maxBudget) => buildSIPPStep({ maxBudget, phaseYears, realReturnRate, taxRate, sippNetLimit, projectPot, fmtGBP, fmtPct });
+    const makeSipp = (maxBudget) => buildSIPPStep({ maxBudget, phaseYears, realReturnRate, taxRate, sippNetLimit, salary, projectPot, fmtGBP, fmtPct });
     const makeIsa  = (maxBudget) => buildISAStep({ maxBudget, phaseYears, realReturnRate, projectPot, fmtGBP });
 
     let remaining = allocateSippIsaInOrder({ steps, remaining: budget, optMode, makeSipp, makeIsa });

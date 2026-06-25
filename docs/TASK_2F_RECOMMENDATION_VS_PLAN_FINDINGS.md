@@ -77,11 +77,35 @@ well within earnings, so £2,344 (step) and £8,594 (standalone) relief are righ
    higher-rate band, blended relief would be lower than `(marginal − 20%) ×
    gross`. The app applies the top marginal rate to the whole contribution.
 
-**Decision:** left unchanged. Both are edge cases that don't affect the
-documented test scenarios, and modelling them precisely needs the contribution
-split across bands — a larger change better suited to the Task 3 refactor (pure
-`pensionModelling.js`) with dedicated tests. Recorded here as a known limitation
-for the TM470 evaluation.
+**Decision (original):** left unchanged at the time — documented as a known
+limitation to be modelled during the Task 3 refactor.
+
+**RESOLVED (2026-06-25, post Tasks 3 & 4).** Both caveats are now modelled with
+two pure helpers in `pensionModelling.js`, used everywhere SIPP relief is
+computed (no more duplicated formula):
+
+- `sippHigherRateRelief(gross, marginalRate, salary)` — relief is now
+  **band-aware**: `(marginal − 0.20) × min(gross, higher-band income)` where
+  higher-band income = `max(0, salary − 50,270)`. Only the portion of the gross
+  actually taxed above 20% attracts extra relief.
+- `reliefEligibleGross(gross, salary)` — caps relief-eligible gross at HMRC's
+  **100%-of-earnings** limit (or the £3,600 floor).
+
+Wired into `buildResults.js` (the standalone SIPP option) and `allocationEngine.js`
+`buildSIPPStep` (the action-plan step), with `salary` threaded through both
+action-plan builders.
+
+**Verified (unchanged where it should be, fixed where it bit):**
+
+| Case | Before | After |
+|---|---|---|
+| £160k, gross £34,375, all in 45% band | £8,594 relief | £8,594 (identical) |
+| Band-straddle: £55k salary, £12,500 gross @40% | £2,500 (over-credited £1,554) | **£946** (only £4,730 in band) |
+| Earnings cap: £5k salary, £34,375 gross | relief on full gross | eligible gross **£5,000** |
+| Low earner floor: £2k salary | — | eligible gross **£3,600** |
+
+All 61 Jest tests pass (10 new for these helpers + an end-to-end earnings-cap
+check); the verified £160k scenario is byte-identical.
 
 ---
 

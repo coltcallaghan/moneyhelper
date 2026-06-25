@@ -9,6 +9,8 @@
 // annual limit, basic-rate band, SIPP 25% government top-up.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { sippHigherRateRelief } from './pensionModelling';
+
 const ISA_ANNUAL_LIMIT = 20000;
 // SIPP net contribution that keeps retirement drawdown within the £12,570 PA:
 // pot × 0.75 × 0.04 = 12,570 → pot = 419,000; back out the annual net amount.
@@ -27,9 +29,11 @@ const PA_FILLED_POT = 12570 / (0.75 * 0.04);
  * @param {function} args.projectPot - (annualContrib, years, r) => pot.
  * @param {function} args.fmtGBP - Currency formatter.
  * @param {function} args.fmtPct - Percentage formatter.
+ * @param {number} [args.salary] - Relevant earnings, so higher-rate relief is
+ *   band-aware (only the gross in the higher band) and capped at 100% of earnings.
  * @returns {object|null} A SIPP step (with netAlloc) or null.
  */
-export function buildSIPPStep({ maxBudget, phaseYears, realReturnRate, taxRate, sippNetLimit, projectPot, fmtGBP, fmtPct }) {
+export function buildSIPPStep({ maxBudget, phaseYears, realReturnRate, taxRate, sippNetLimit, projectPot, fmtGBP, fmtPct, salary }) {
   if (maxBudget <= 0) return null;
 
   const fvFactorLocal = (phaseYears > 0 && realReturnRate !== 0)
@@ -58,7 +62,7 @@ export function buildSIPPStep({ maxBudget, phaseYears, realReturnRate, taxRate, 
 
   const sAlloc = Math.round(sippAlloc);
   const sGross = sAlloc * 1.25;
-  const sExtra = taxRate > 0.20 ? sGross * (taxRate - 0.20) : 0;
+  const sExtra = sippHigherRateRelief(sGross, taxRate, salary);
   const sNet = sAlloc - sExtra;
   const sSaved = sAlloc - sNet;
   const sGovTopUp = sGross - sAlloc;

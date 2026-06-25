@@ -11,7 +11,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { parseTaxCode, getEffectivePA, calcIncomeTax, getMarginalTaxRate, calcNI, getMarginalNI } from './taxCalculations';
-import { projectPot, calcMixScenarios } from './pensionModelling';
+import { projectPot, calcMixScenarios, sippHigherRateRelief, reliefEligibleGross } from './pensionModelling';
 import { buildMODActionPlan } from '../actionPlanMOD';
 import { buildCivilianActionPlan } from '../actionPlanCivilian';
 
@@ -118,14 +118,14 @@ export function buildResults({ salary, taxCode, age, yearsService, leaveAge, apC
       // MOD user (serving)
       ap = buildMODActionPlan({
         contribution, years, realReturnRate, taxRate, niRate, age, leaveAge, retirementAge,
-        apPaymentType, apCostPer100, sippNetLimit, fmtGBP, fmtPct, projectPot,
+        apPaymentType, apCostPer100, sippNetLimit, salary, fmtGBP, fmtPct, projectPot,
         addedPension, apMaxContrib, costPer100actual, AP_LIFETIME_MAX, alreadyLeft, yearsService, optMode: mode
       });
     } else {
       // Civilian or veteran
       ap = buildCivilianActionPlan({
         contribution, years, realReturnRate, taxRate, niRate, age, retirementAge,
-        sippNetLimit, fmtGBP, fmtPct, projectPot, alreadyLeft, optMode: mode
+        sippNetLimit, salary, fmtGBP, fmtPct, projectPot, alreadyLeft, optMode: mode
       });
     }
 
@@ -250,7 +250,12 @@ export function buildResults({ salary, taxCode, age, yearsService, leaveAge, apC
   // ── SIPP calculation ───────────────────────────────────────────────────
   const sippGovTopUp = contribution * (20 / 80);
   const sippGross = contribution + sippGovTopUp;
-  const sippExtraRelief = taxRate > 0.20 ? sippGross * (taxRate - 0.20) : 0;
+  // Higher-rate extra relief is band-aware (only the gross sitting in the
+  // higher/additional band) and limited to relief-eligible gross (HMRC caps
+  // relief at 100% of earnings or £3,600). For typical cases where the gross is
+  // within earnings and fully in the top band this equals the old figure.
+  const reliefGross = reliefEligibleGross(sippGross, salary);
+  const sippExtraRelief = sippHigherRateRelief(reliefGross, taxRate, salary);
   const sippNetCost = contribution - sippExtraRelief;
   const existingSippGrowth = (existingSippPot > 0 ? existingSippPot * Math.pow(1 + realReturnRate, years) : 0);
   const sippPot = projectPot(sippGross, years, realReturnRate) + existingSippGrowth;

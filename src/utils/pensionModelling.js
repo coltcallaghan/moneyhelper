@@ -9,6 +9,47 @@
 
 import { calcIncomeTax } from './taxCalculations';
 
+// 2025/26 higher-rate threshold (gross income at which 40% tax starts).
+const HIGHER_RATE_THRESHOLD = 50270;
+// Minimum gross pension contribution that always attracts relief, regardless of
+// earnings (HMRC: the higher of £3,600 gross or 100% of relevant earnings).
+const MIN_RELIEVABLE_GROSS = 3600;
+
+/**
+ * Gross SIPP contribution that actually attracts tax relief, capped at HMRC's
+ * "100% of relevant earnings (or £3,600)" limit. Above this the basic-rate
+ * government top-up and any higher-rate relief should not be credited.
+ * If `salary` is not provided the gross is returned uncapped (legacy behaviour).
+ * @param {number} grossWanted - The intended gross contribution.
+ * @param {number} [salary] - Relevant UK earnings for the year.
+ * @returns {number} Relief-eligible gross (≤ grossWanted).
+ */
+export function reliefEligibleGross(grossWanted, salary) {
+  if (typeof salary !== 'number') return grossWanted;
+  return Math.min(grossWanted, Math.max(salary, MIN_RELIEVABLE_GROSS));
+}
+
+/**
+ * Higher-rate (and additional-rate) extra tax relief on a SIPP contribution,
+ * claimed via self-assessment on top of the 20% basic-rate top-up. Relief at
+ * (marginal − 20%) applies only to the portion of the GROSS contribution that
+ * sits in the higher/additional band — i.e. the income that was actually taxed
+ * above 20%. Below the higher-rate threshold there is no extra relief.
+ * If `salary` is omitted the whole gross is treated as higher-rate (legacy
+ * behaviour, exact for incomes where the gross is fully inside the top band).
+ * @param {number} gross - Gross SIPP contribution.
+ * @param {number} marginalRate - Marginal income tax rate now (decimal).
+ * @param {number} [salary] - Relevant earnings, to bound the higher-band portion.
+ * @returns {number} Extra relief amount.
+ */
+export function sippHigherRateRelief(gross, marginalRate, salary) {
+  if (marginalRate <= 0.20 || gross <= 0) return 0;
+  const higherBandIncome = (typeof salary === 'number')
+    ? Math.max(0, salary - HIGHER_RATE_THRESHOLD)
+    : gross; // legacy: assume the whole gross sits in the higher band
+  return (marginalRate - 0.20) * Math.min(gross, higherBandIncome);
+}
+
 /**
  * Future value of a regular ANNUAL contribution (annuity-due — contributions at
  * the start of each year): FV = C × ((1+r)^n − 1) / r × (1 + r).
@@ -54,7 +95,7 @@ export function calcMixScenarios(contribution, years, returnRate, taxRate) {
     const isaContrib   = Math.min(contribution * isa, 20000);
     const sippGovTopUp = sippNet * (20 / 80);
     const sippGross    = sippNet + sippGovTopUp;
-    const sippExtra    = taxRate > 0.20 ? sippGross * (taxRate - 0.20) : 0;
+    const sippExtra    = sippHigherRateRelief(sippGross, taxRate);
     const netCost      = isaContrib + sippNet - sippExtra;
 
     const isaPot    = projectPot(isaContrib, years, returnRate);
