@@ -91,9 +91,23 @@ assumptions (e.g. "assumes 2025/26 tax year").
 ## Note for the next deploy
 
 The component split is pure presentation and is guarded by the build, but the
-React UI is not exercised by the Node test scripts. The **SavedCalculationsPanel**
-(save / rename / delete / compare / select) in particular is worth a quick
-manual click-through after the next `npm run deploy`.
+React UI is not exercised by the Node/Jest tests.
+
+**SavedCalculationsPanel — static verification (2026-06-25).** Reviewed after
+extraction and confirmed behaviour-preserving by construction:
+- The component is a **pure function of its props** — no `useState`/`useEffect`/
+  `useRef`, no `localStorage`/`window`/`document` access. All saved-calc **state
+  and side effects remain in `App()`** (the `savedCalcs` initializer, the
+  localStorage-write effect, `viewingCalc`, `handleCompareSaved`,
+  `handleDeleteSaved`), passed down as props.
+- Props match exactly on both sides; the panel references only its props and
+  locals (no stray/undefined identifiers); CRA build compiles clean.
+- The extraction was a byte-faithful move of the original JSX + the three inner
+  `handleRename*` closures, which only call the injected setters.
+
+Residual risk is therefore visual/interaction only (not logic). A quick manual
+click-through (save → rename → delete → compare/select → back to live) on the
+next `npm run deploy` is a light-touch confirmation rather than a risk item.
 
 ## Final structure
 
