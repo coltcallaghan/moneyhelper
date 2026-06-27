@@ -77,16 +77,24 @@ assumptions (e.g. "assumes 2025/26 tax year").
      exactly — income tax £58,203, ISA pot £1,150,837, SIPP pot £429,673, total
      net worth £2,009,571, FIRE £750,000, maxReturn ISA £234,200.
 
-## Files still over the 400-line target (deliberate)
+## 400-line target — FULLY MET (follow-up, 2026-06-27)
 
-- **`buildResults.js` (579)** — one cohesive orchestration function. Splitting a
-  single sequential calculation into arbitrary sub-files would hurt readability
-  and traceability more than it helps; it is pure and fully testable as one unit.
-- **`App.js` (766)** — the single stateful `App()` React component (form state,
-  wizard, layout). Splitting further means lifting interdependent `useState`
-  hooks and form handlers — high churn, real regression risk, and not verifiable
-  by the Node scripts. The brief's core intent (calculation fully separated from
-  presentation) is met; this residual is presentation/state only.
+The two files that initially remained over 400 were brought under it in a
+second pass, verified behaviour-neutral by a golden-output harness (4 scenarios
+× 3 modes — tax, per-mode net worth, action-plan steps, recommendations,
+mortgage, options — **byte-identical** before/after) plus the 67-test suite:
+
+- **`buildResults.js` 584 → 384** — extracted three pure blocks:
+  `computeAddedPension` and `shouldIncludeAddedPension` → `pensionModelling.js`;
+  `buildRecommendation` → new `recommendations.js`; `computeMortgageAnalysis`
+  → new `mortgageAnalysis.js`.
+- **`App.js` 766 → 325** — lifted the results column into
+  `components/ResultsSection.jsx` and the collapsed input-summary chips into
+  `components/InputSummaryChips.jsx` (both pure-prop, state stays in `App()`).
+
+Every source file is now ≤ 400 lines (largest: `buildResults.js` 384). The AFPS
+gate is now the pure exported `shouldIncludeAddedPension`, unit-tested at the
+exact 90% / 100% boundaries.
 
 ## Note for the next deploy
 

@@ -1,4 +1,5 @@
 import { buildSIPPStep, buildISAStep, buildGIAStep, allocateSippIsaInOrder } from './utils/allocationEngine';
+import { shouldIncludeAddedPension } from './utils/pensionModelling';
 
 // Action Plan logic for MOD (serving) users
 export function buildMODActionPlan({
@@ -48,11 +49,11 @@ export function buildMODActionPlan({
           const sippNetIfAll = apAlloc - (taxRate > 0.20 ? sippGrossIfAll * (taxRate - 0.20) : 0);
           const sippEfficiency = sippNetIfAll > 0 ? (sippPotIfAll / sippNetIfAll) : 0;
 
-          // Only include AP if it looks reasonably efficient compared with SIPP, or
-          // if the marginal tax/NI benefits are very large (i.e., taxRate+niRate high).
-          // If retiring before SPA, require AP to be MORE efficient (not just 90% of SIPP)
-          const minEfficiencyRatio = retiresTooEarlyForAP ? 1.0 : 0.9; // stricter for early retirement
-          const includeAPActual = (apEfficiency >= sippEfficiency * minEfficiencyRatio) || ((taxRate + niRate) >= 0.5 && !retiresTooEarlyForAP);
+          // Include AP only if it's efficient enough vs SIPP (or relief is very
+          // high). Extracted to a pure, unit-tested gate — see pensionModelling.
+          const includeAPActual = shouldIncludeAddedPension({
+            apEfficiency, sippEfficiency, retiresTooEarlyForAP, taxRate, niRate,
+          });
 
           if (includeAPActual) {
             steps.push({

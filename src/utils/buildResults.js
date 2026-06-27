@@ -11,9 +11,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { parseTaxCode, getEffectivePA, calcIncomeTax, getMarginalTaxRate, calcNI, getMarginalNI } from './taxCalculations';
-import { projectPot, calcMixScenarios, sippHigherRateRelief, reliefEligibleGross } from './pensionModelling';
+import { projectPot, calcMixScenarios, sippHigherRateRelief, reliefEligibleGross, computeAddedPension } from './pensionModelling';
 import { buildMODActionPlan } from '../actionPlanMOD';
 import { buildCivilianActionPlan } from '../actionPlanCivilian';
+import { buildRecommendation } from './recommendations';
+import { computeMortgageAnalysis } from './mortgageAnalysis';
 
 /**
  * Build the full results object from the user's inputs.
@@ -46,68 +48,14 @@ export function buildResults({ salary, taxCode, age, yearsService, leaveAge, apC
   const realReturnRate = (1 + returnRate) / (1 + inflationRate) - 1;
   const incomeTax     = calcIncomeTax(taxBasis, taxInfo);
   const ni            = calcNI(niBasis);
-  // ── AFPS 15 Added Pension (compute parameters used by action plan) ───────
-  const apTaxSaving = contribution * taxRate;
-  const apNISaving = contribution * niRate;
-  const apNetCost = contribution - apTaxSaving - apNISaving;
-
-  let effectiveLeaveAge;
-  let alreadyLeft = false;
-  if (typeof leaveAge !== 'undefined' && leaveAge !== null && !isNaN(leaveAge) && leaveAge <= age) {
-    // Explicitly marked as already left — reflect that state (no future contributions)
-    alreadyLeft = true;
-    effectiveLeaveAge = age;
-  } else {
-    // If a leaveAge is provided, ensure it is at least one year older than current age
-    effectiveLeaveAge = Math.min(Math.max(leaveAge || retirementAge, age + 1), retirementAge);
-  }
-  const leaveYears = Math.max(0, effectiveLeaveAge - age);
-
-  const AP_LIFETIME_MAX = 8571.21;
-  const AP_MAX_MULTIPLES = AP_LIFETIME_MAX / 100;
-  const PERIODIC_LOADING = 1.37;
-  const estimatedCostPer100sp = Math.round(800 * Math.pow(1.042, (age || 30) - 20));
-  const estimatedCostPer100ap = apPaymentType === 'periodic' ? Math.round(estimatedCostPer100sp * PERIODIC_LOADING) : estimatedCostPer100sp;
-  const costPer100actual = apCostPer100 > 0 ? apCostPer100 : estimatedCostPer100ap;
-  const blocksPerYear = costPer100actual > 0 ? (contribution / costPer100actual) : 0;
-  const pensionPerYear = blocksPerYear * 100;
-
-  const totalPensionRaw = pensionPerYear * leaveYears;
-  const totalPensionAcquired = Math.min(totalPensionRaw, AP_LIFETIME_MAX);
-  const willHitCap = totalPensionRaw > AP_LIFETIME_MAX;
-  const yearsToHitCap = pensionPerYear > 0 ? Math.ceil(AP_LIFETIME_MAX / pensionPerYear) : leaveYears;
-  const apMaxAnnualByLifetime = leaveYears > 0
-    ? Math.round((AP_LIFETIME_MAX / 100) * costPer100actual / leaveYears)
-    : Math.round(AP_MAX_MULTIPLES * costPer100actual);
-  const apMaxContrib = Math.min(apMaxAnnualByLifetime, 60000);
-  const apLimitExceeded = !alreadyLeft && (willHitCap || contribution > 60000);
-
-  const edpEligible = age >= 40 && (yearsService || 0) >= 20 && age < 60;
-  const edpLumpSum = edpEligible ? totalPensionAcquired * 2.25 : 0;
-  const edpIncome = edpEligible ? totalPensionAcquired * 0.34 : 0;
-  const apPot = totalPensionAcquired * 25 + edpLumpSum;
-
-  let addedPension;
-  if (isServing) {
-    addedPension = {
-      id: 'addedpension', name: 'AFPS 15 Added Pension', icon: '🎖️', color: '#10b981',
-      costToYou: alreadyLeft ? 0 : apNetCost,
-      taxSaving: alreadyLeft ? 0 : apTaxSaving,
-      niSaving: alreadyLeft ? 0 : apNISaving,
-      potAtRetirement: apPot,
-      annualIncomeAtRetirement: totalPensionAcquired,
-      edpEligible, edpLumpSum, edpIncome, totalPensionAcquired, pensionPerYear, leaveYears,
-      limitExceeded: apLimitExceeded,
-      limitNote: alreadyLeft ? 'Already left — no further contributions' : (willHitCap ? `Career cap reached after ${yearsToHitCap} yrs` : null),
-    };
-  } else {
-    addedPension = {
-      id: 'addedpension', name: 'AFPS 15 Added Pension', icon: '🎖️', color: '#10b981',
-      costToYou: 0, taxSaving: 0, niSaving: 0, potAtRetirement: 0, annualIncomeAtRetirement: 0,
-      edpEligible: false, edpLumpSum: 0, edpIncome: 0, totalPensionAcquired: 0, pensionPerYear: 0, leaveYears: 0,
-      limitExceeded: false, limitNote: 'Not available unless currently serving',
-    };
-  }
+  // ── AFPS 15 Added Pension (pure helper) ──────────────────────────────────
+  const {
+    addedPension, alreadyLeft, leaveYears, costPer100actual, apMaxContrib,
+    AP_LIFETIME_MAX, edpEligible,
+  } = computeAddedPension({
+    contribution, age, leaveAge, retirementAge, yearsService,
+    taxRate, niRate, apCostPer100, apPaymentType, isServing,
+  });
   // ── Action Plan: Compute all 3 modes at once ──
   const MODES = ['maxReturn', 'earliestFire', 'targetRetirement'];
   const modeData = {};
@@ -339,92 +287,10 @@ export function buildResults({ salary, taxCode, age, yearsService, leaveAge, apC
   // Choose best option. If early retirement is a goal (retirementAge < SPA or < SIPP unlock),
   // prefer the option that produces the highest immediate income at target retirement age
   // (this tends to minimise FIRE age). Otherwise fall back to efficiency ranking.
-  const retireAge = retirementAge || 60;
-  options.forEach(o => {
-    if (o.id === 'isa') {
-      o.earlyInc = (o.potAtRetirement || 0) * 0.04;
-    } else if (o.id === 'sipp') {
-      o.earlyInc = (retireAge >= 57) ? (o.annualIncomeAtRetirement || 0) : 0;
-    } else if (o.id === 'addedpension') {
-      o.earlyInc = (retireAge >= statePensionAge) ? (o.annualIncomeAtRetirement || 0) : 0;
-    } else {
-      o.earlyInc = 0;
-    }
+  const recommendation = buildRecommendation({
+    options, retirementAge, statePensionAge, age, years, realReturnRate,
+    contribution, targetIncome, existingIsaPot, existingSippPot, fmtGBP,
   });
-
-  // ── Max Return Best: pick option with highest accessible income from its unlock age ──
-  const maxReturnBest = options.reduce((b, o) => (o.earlyInc > (b.earlyInc || 0) ? o : b), options[0]);
-  let maxReturnReason = '';
-  if (maxReturnBest.id === 'addedpension') {
-    maxReturnReason = `Added Pension provides ${fmtGBP(maxReturnBest.annualIncomeAtRetirement, 0)}/yr from age ${statePensionAge} — a guaranteed, CPI-linked income stream for life. With a ${fmtGBP(contribution)} annual contribution, you get maximum security and lifelong indexation.`;
-  } else if (maxReturnBest.id === 'sipp') {
-    maxReturnReason = `SIPP gives you ${fmtGBP(maxReturnBest.annualIncomeAtRetirement, 0)}/yr from age 57 onwards — the highest accessible income you can build with your current contributions. Flexible drawdown means you control your income.`;
-  } else {
-    maxReturnReason = `ISA provides ${fmtGBP(maxReturnBest.annualIncomeAtRetirement, 0)}/yr immediately accessible — the maximum you can withdraw tax-free at any age. Perfect for having money available when you need it.`;
-  }
-
-  // ── Earliest FIRE: find which option lets you hit targetIncome at youngest age ──
-  const fireTarget = (targetIncome && targetIncome > 0) ? targetIncome : 0;
-  let earliestFireBest = options[0];
-  let earliestFireAge = Infinity;
-
-  if (fireTarget > 0) {
-    options.forEach(o => {
-      let age_at_target = Infinity;
-      if (o.id === 'isa') {
-        // ISA: accessible at any age, simple 4% calculation
-        const existing = existingIsaPot || 0;
-        const fvFactor = (years > 0 && realReturnRate !== 0)
-          ? ((Math.pow(1 + realReturnRate, years) - 1) / realReturnRate) * (1 + realReturnRate)
-          : years;
-        for (let yr = 1; yr <= 80; yr++) {
-          const pot = existing * Math.pow(1 + realReturnRate, yr) + contribution * fvFactor / (years > 0 ? years : 1) * yr;
-          if (pot * 0.04 >= fireTarget) { age_at_target = age + yr; break; }
-        }
-      } else if (o.id === 'sipp') {
-        // SIPP: accessible from 57, then 4% of drawdown pot minus tax (assumes ~20% tax in retirement)
-        if (57 > age) {
-          const yrs_to_57 = 57 - age;
-          const existing = existingSippPot || 0;
-          const sippGross = contribution * 1.25;
-          for (let yr = yrs_to_57; yr <= 80; yr++) {
-            const pot = existing * Math.pow(1 + realReturnRate, yr) + sippGross * ((Math.pow(1 + realReturnRate, Math.max(0, yr - 1)) - 1) / realReturnRate);
-            const drawdown = pot * 0.75 * 0.04;
-            const taxOnDraw = calcIncomeTax(drawdown, { pa: 12570, mode: 'normal' });
-            const netInc = Math.max(0, drawdown - taxOnDraw);
-            if (netInc >= fireTarget) { age_at_target = age + yr; break; }
-          }
-        }
-      } else if (o.id === 'addedpension') {
-        // AP: accessible from SPA, fixed pension + potential drawdown
-        if (statePensionAge > age) {
-          const yrs_to_spa = statePensionAge - age;
-          const apInc = o.annualIncomeAtRetirement || 0;
-          // For AP scenario, also count the ISA pot from contribution
-          const isaGross = contribution * 0.75; // rough split
-          for (let yr = yrs_to_spa; yr <= 80; yr++) {
-            const isaPot = isaGross * ((Math.pow(1 + realReturnRate, yr) - 1) / realReturnRate);
-            const isaInc = isaPot * 0.04;
-            if (apInc + isaInc >= fireTarget) { age_at_target = statePensionAge; break; }
-          }
-        }
-      }
-      o.fireAge = age_at_target;
-      if (age_at_target < earliestFireAge) {
-        earliestFireAge = age_at_target;
-        earliestFireBest = o;
-      }
-    });
-  }
-  let earliestFireReason = '';
-  if (fireTarget <= 0) {
-    earliestFireReason = `No target income set. This mode compares which vehicle reaches your FIRE goal at the earliest age.`;
-  } else if (earliestFireAge === Infinity) {
-    earliestFireReason = `With current contributions, none of the vehicles reach your £${fireTarget.toLocaleString()}/yr target income. Increase contributions or lower your retirement target.`;
-  } else {
-    const veh = earliestFireBest.id === 'isa' ? 'ISA' : (earliestFireBest.id === 'sipp' ? 'SIPP' : 'Added Pension');
-    earliestFireReason = `${veh} lets you reach your £${fireTarget.toLocaleString()}/yr target income by age ${Math.floor(earliestFireAge)} — the earliest possible retirement with your current contributions.`;
-  }
 
   const mixData = calcMixScenarios(contribution, years, realReturnRate, taxRate);
 
@@ -448,27 +314,6 @@ export function buildResults({ salary, taxCode, age, yearsService, leaveAge, apC
   // FIRE number (4% rule) if user provided a target income
   const fireNumber = (targetIncome && targetIncome > 0) ? targetIncome * 25 : 0;
 
-  // ── Target Retirement Best: prioritise accessible income at target retirement age ──
-  // This alternative recommendation focuses on hitting your target income at your target
-  // retirement age, rather than maximising overall pot efficiency.
-  const targetBest = options.reduce((b, o) => o.earlyInc > (b.earlyInc || 0) ? o : b, options[0]);
-  let targetRecReason = '';
-  if (targetBest.id === 'addedpension') {
-    if (retireAge >= statePensionAge) {
-      targetRecReason = `For your retirement goal, Added Pension provides ${fmtGBP(targetBest.annualIncomeAtRetirement, 0)}/yr from age ${statePensionAge} — a guaranteed, CPI-linked income stream for life.`;
-    } else {
-      targetRecReason = `Added Pension locks until ${statePensionAge}, so it won't help reach your target at age ${retireAge}. Consider ISA or SIPP for immediate retirement access.`;
-    }
-  } else if (targetBest.id === 'sipp') {
-    if (retireAge >= 57) {
-      targetRecReason = `With SIPP, you'd have ${fmtGBP(targetBest.annualIncomeAtRetirement, 0)}/yr accessible from age 57 — matching your ${retireAge} retirement target with flexible, tax-efficient drawdown.`;
-    } else {
-      targetRecReason = `SIPP unlocks at 57, which is after your target retirement age (${retireAge}). Prioritise ISA for earlier access.`;
-    }
-  } else if (targetBest.id === 'isa') {
-    targetRecReason = `ISA provides the highest accessible income at age ${retireAge} — ${fmtGBP(targetBest.annualIncomeAtRetirement, 0)}/yr. Fully flexible, tax-free, and withdrawable at any age.`;
-  }
-
   // Tax summary helpers
   const effectivePA = getEffectivePA(taxBasis, taxInfo.pa);
   const effTaxRate = (salary > 0) ? ((incomeTax + ni) / salary) : 0;
@@ -480,56 +325,11 @@ export function buildResults({ salary, taxCode, age, yearsService, leaveAge, apC
   const emergencyShortfall = Math.max(0, emergencyTarget - cashReserve);
   const emergencyOk = cashReserve >= emergencyTarget;
 
-  // Simple mortgage summary (used for equity and a basic overpay/invest verdict)
-  const equityNow = propertyValue - mortgageBalance;
-  const yearsUntilRetirement = Math.max(0, retirementAge - age);
-  const yearsToRepayBeforeRetire = Math.min(mortgageTermYears, yearsUntilRetirement);
-  // Compute an effective monthly payment if none provided, using amortisation formula
-  const monthlyRate = mortgageRate; // mortgageRate is already a decimal (e.g., 0.045 for 4.5%)
-  const monthsTotal = mortgageTermYears * 12;
-  const computedMonthly = (monthlyMortgage > 0)
-    ? monthlyMortgage
-    : (mortgageBalance > 0 && monthsTotal > 0
-      ? (monthlyRate > 0
-          ? (mortgageBalance * (monthlyRate / 12)) / (1 - Math.pow(1 + (monthlyRate / 12), -monthsTotal))
-          : mortgageBalance / monthsTotal)
-      : 0);
-
-  // Remaining balance at retirement: amortisation formula for k payments
-  const monthsUntilRetire = Math.min(monthsTotal, yearsToRepayBeforeRetire * 12);
-  let remainingBalanceAtRetire = mortgageBalance;
-  if (monthsUntilRetire > 0 && computedMonthly > 0) {
-    const r = monthlyRate / 12;
-    if (r === 0) {
-      remainingBalanceAtRetire = Math.max(0, mortgageBalance - computedMonthly * monthsUntilRetire);
-    } else {
-      const pow = Math.pow(1 + r, monthsUntilRetire);
-      remainingBalanceAtRetire = Math.max(0, mortgageBalance * pow - computedMonthly * ((pow - 1) / r));
-    }
-  }
-  // Grow property value to retirement using the house appreciation rate
-  const propertyValueAtRetire = propertyValue > 0 ? Math.round(propertyValue * Math.pow(1 + propertyAppRate, yearsUntilRetirement)) : 0;
-  const equityRetirement = propertyValueAtRetire - remainingBalanceAtRetire;
-  const shouldOverpay = mortgageRate > 0.05 && mortgageBalance > 0;
-  const mortgageVerdict = shouldOverpay
-    ? 'High mortgage rate — consider overpaying the mortgage if you have excess cash.'
-    : 'Low mortgage rate — consider investing excess cash for potentially higher returns.';
-
-  // Estimate total interest over remaining term (payments - principal)
-  const totalInterestEst = (computedMonthly > 0 && monthsTotal > 0)
-    ? Math.max(0, (computedMonthly * monthsTotal) - mortgageBalance)
-    : 0;
-
-  // Estimate mortgage paid-off age (using monthsTotal)
-  const mortgagePaidOffAge = (monthsTotal > 0 && mortgageBalance > 0)
-    ? age + Math.ceil(monthsTotal / 12)
-    : null;
-  const mortgageAnalysis = {
-    propertyValue, mortgageBalance, mortgageRate, mortgageTermYears, monthlyMortgage,
-    equityNow, equityRetirement, shouldOverpay, verdict: mortgageVerdict,
-    totalInterestEst, mortgagePaidOffAge
-  };
-  const propertyEquityAtRetirement = mortgageAnalysis ? mortgageAnalysis.equityRetirement : propertyValueAtRetire;
+  // ── Mortgage / property equity (pure helper) ─────────────────────────────
+  const { mortgageAnalysis, propertyEquityAtRetirement } = computeMortgageAnalysis({
+    propertyValue, mortgageBalance, mortgageRate, mortgageTermYears,
+    monthlyMortgage, propertyAppRate, age, retirementAge,
+  });
   const liquidWealth  = isaOptPot + sippOptPot;
   const dbOptPot = existingDbPension * 25;
   // Include the commuted DB pension in net worth — it is a capital-equivalent
@@ -573,7 +373,7 @@ export function buildResults({ salary, taxCode, age, yearsService, leaveAge, apC
   return {
     options, maxEfficiency, fireNumber, years, retirementAge, mixData, existingDbPension, statePensionAge, statePension,
     inflationRate, realReturnRate, returnRate, actionPlan, phaseAllocations, contribution, salary, leaveYears: leaveYears,
-    recommendation: { maxReturnBest, maxReturnReason, earliestFireBest, earliestFireReason, targetBest, targetReason: targetRecReason },
+    recommendation,
     taxSummary: { incomeTax, ni, takeHome, effectiveTaxRate: effTaxRate, marginalRate: taxRate, niRate, effectivePA, taxInfo, adjustedSalary: taxBasis, niableSalary: niBasis, salSacrifice, flatRateExpenses, hasDeductions },
     mortgageAnalysis,
     cashAnalysis: hasCash ? { cashReserve, monthlyExpenses, emergencyTarget, emergencyShortfall, emergencyOk } : null,

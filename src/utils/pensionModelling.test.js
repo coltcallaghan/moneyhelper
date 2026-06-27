@@ -1,4 +1,35 @@
-import { projectPot, calcMixScenarios, sippHigherRateRelief, reliefEligibleGross } from './pensionModelling';
+import { projectPot, calcMixScenarios, sippHigherRateRelief, reliefEligibleGross, shouldIncludeAddedPension } from './pensionModelling';
+
+describe('shouldIncludeAddedPension — AFPS-15 efficiency gate', () => {
+  // Not retiring early: gate is 90% of SIPP efficiency, boundary inclusive.
+  const normal = { retiresTooEarlyForAP: false, taxRate: 0.20, niRate: 0.08 };
+  it('includes AP at EXACTLY 90% of SIPP efficiency (>= boundary)', () => {
+    expect(shouldIncludeAddedPension({ ...normal, apEfficiency: 90, sippEfficiency: 100 })).toBe(true);
+  });
+  it('excludes AP just below 90% of SIPP efficiency', () => {
+    expect(shouldIncludeAddedPension({ ...normal, apEfficiency: 89.99, sippEfficiency: 100 })).toBe(false);
+  });
+  it('includes AP comfortably above the threshold', () => {
+    expect(shouldIncludeAddedPension({ ...normal, apEfficiency: 100, sippEfficiency: 100 })).toBe(true);
+  });
+
+  // Retiring before SPA: gate tightens to 100%, and the high-relief shortcut is off.
+  const early = { retiresTooEarlyForAP: true, taxRate: 0.20, niRate: 0.08 };
+  it('requires AP to MATCH or beat SIPP (100%) when retiring before SPA', () => {
+    expect(shouldIncludeAddedPension({ ...early, apEfficiency: 100, sippEfficiency: 100 })).toBe(true);
+    expect(shouldIncludeAddedPension({ ...early, apEfficiency: 99.99, sippEfficiency: 100 })).toBe(false);
+    // 90% would have passed the normal gate but fails the early-retirement gate:
+    expect(shouldIncludeAddedPension({ ...early, apEfficiency: 90, sippEfficiency: 100 })).toBe(false);
+  });
+
+  // High combined relief (>=50%) is a shortcut — but only when NOT retiring early.
+  it('includes AP on the high tax+NI shortcut even if it trails SIPP (not early)', () => {
+    expect(shouldIncludeAddedPension({ retiresTooEarlyForAP: false, taxRate: 0.45, niRate: 0.05, apEfficiency: 10, sippEfficiency: 100 })).toBe(true);
+  });
+  it('disables the high-relief shortcut when retiring before SPA', () => {
+    expect(shouldIncludeAddedPension({ retiresTooEarlyForAP: true, taxRate: 0.45, niRate: 0.05, apEfficiency: 10, sippEfficiency: 100 })).toBe(false);
+  });
+});
 
 describe('sippHigherRateRelief — band-aware higher-rate relief', () => {
   it('is zero at or below the basic rate', () => {
